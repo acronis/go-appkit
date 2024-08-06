@@ -1,0 +1,86 @@
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  dupl:
+    threshold: 100
+  goconst:
+    min-len: 2
+    min-occurrences: 2
+  misspell:
+    locale: US
+  lll:
+    line-length: 140
+  goimports:
+    local-prefixes: git.acronis.com/abc/go-libs/
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+      - experimental
+    disabled-checks:
+      - whyNoLint
+      - unnecessaryDefer
+      - paramTypeCombine
+    settings:
+      hugeParam:
+        sizeThreshold: 256
+      rangeValCopy:
+        sizeThreshold: 256
+  funlen:
+    lines: 100
+    statements: 50
+  revive:
+    rules:
+      - name: "unused-parameter"
+        disabled: true
+
+linters:
+  disable-all: true
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - errcheck
+    - exportloopref
+    - funlen
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gofmt
+    - goimports
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - revive
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+
+issues:
+  # Don't use default excluding to be sure all exported things (method, functions, consts and so on) have comments.
+  exclude-use-default: false
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - dogsled
+        - dupl
+        - funlen
+        - goconst
+        - gocritic
+        - gocyclo
+        - gosec
+        - govet
+        - lll
+        - ineffassign
+        - noctx
+        - unused

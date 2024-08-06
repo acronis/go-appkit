@@ -1,0 +1,9 @@
+exclude:
+  - message: Exclude vendor and tests
+    paths:
+      - vendor
+
+  - message: Go module checksums and commit hashes are not sensitive
+    paths:
+      - go.sum
+      - middleware/recovery.go
