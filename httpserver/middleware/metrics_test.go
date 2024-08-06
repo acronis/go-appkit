@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 
-	"git.acronis.com/abc/go-libs/v2/testutil"
+	"github.com/acronis/go-libs/testutil"
 )
 
 type mockHTTPRequestMetricsNextHandler struct {

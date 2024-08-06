@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"git.acronis.com/abc/go-libs/v2/log"
+	"github.com/acronis/go-libs/log"
 )
 
 func TestWorkerUnit_Start_Stop(t *testing.T) {

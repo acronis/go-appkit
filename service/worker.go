@@ -13,7 +13,7 @@ import (
 	"runtime"
 	"time"
 
-	"git.acronis.com/abc/go-libs/v2/log"
+	"github.com/acronis/go-libs/log"
 )
 
 // ErrPeriodicWorkerStop is an error that may be used for interrupting PeriodicWorker's loop.

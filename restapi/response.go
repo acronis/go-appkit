@@ -13,7 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"git.acronis.com/abc/go-libs/v2/log"
+	"github.com/acronis/go-libs/log"
 )
 
 // ContentTypeAppJSON represents MIME media type for JSON.

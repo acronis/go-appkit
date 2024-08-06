@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"runtime"
 
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/restapi"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/restapi"
 )
 
 // RecoveryDefaultStackSize defines the default size of stack part which will be logged.

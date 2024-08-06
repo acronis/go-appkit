@@ -13,7 +13,7 @@ import (
 	"github.com/ssgreg/logf"
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/log"
+	"github.com/acronis/go-libs/log"
 )
 
 func TestLoggingParams_SetTimeSlotDurationMs(t *testing.T) {

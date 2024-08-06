@@ -34,13 +34,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"git.acronis.com/abc/go-libs/v2/config"
-	"git.acronis.com/abc/go-libs/v2/httpserver"
-	"git.acronis.com/abc/go-libs/v2/httpserver/middleware"
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/profserver"
-	"git.acronis.com/abc/go-libs/v2/restapi"
-	"git.acronis.com/abc/go-libs/v2/service"
+	"github.com/acronis/go-libs/config"
+	"github.com/acronis/go-libs/httpserver"
+	"github.com/acronis/go-libs/httpserver/middleware"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/profserver"
+	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-libs/service"
 )
 
 func main() {

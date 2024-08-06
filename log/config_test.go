@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/config"
+	"github.com/acronis/go-libs/config"
 )
 
 func TestConfig(t *testing.T) {

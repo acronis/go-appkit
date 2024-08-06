@@ -16,9 +16,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/log/logtest"
-	"git.acronis.com/abc/go-libs/v2/testutil"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/log/logtest"
+	"github.com/acronis/go-libs/testutil"
 )
 
 const testDomain = "TestDomain"

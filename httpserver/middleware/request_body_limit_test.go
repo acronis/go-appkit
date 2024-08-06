@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/restapi"
+	"github.com/acronis/go-libs/restapi"
 )
 
 type mockRequestBodyLimitNextHandler struct {
