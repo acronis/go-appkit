@@ -32,11 +32,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/httpserver/middleware"
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/log/logtest"
-	"git.acronis.com/abc/go-libs/v2/restapi"
-	"git.acronis.com/abc/go-libs/v2/testutil"
+	"github.com/acronis/go-libs/httpserver/middleware"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/log/logtest"
+	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-libs/testutil"
 )
 
 func generateCertificate(certFilePath, privKeyPath string) error {

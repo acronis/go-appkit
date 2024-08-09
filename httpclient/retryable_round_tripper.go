@@ -18,8 +18,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/retry"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/retry"
 )
 
 // Default parameter values for RetryableRoundTripper.

@@ -17,9 +17,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"git.acronis.com/abc/go-libs/v2/httpserver/middleware"
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/restapi"
+	"github.com/acronis/go-libs/httpserver/middleware"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/restapi"
 )
 
 func TestHealthCheckHandler_ServeHTTP(t *testing.T) {

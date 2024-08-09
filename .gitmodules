@@ -1,6 +1,0 @@
-[submodule "gbs/buildsystem"]
-	path = gbs/buildsystem
-	url = ../../dbi/gbs-downloader.git
-[submodule "gbs/artifactory_supp"]
-	path = gbs/artifactory_supp
-	url = ../../rt/artifactory-supp.git

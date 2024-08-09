@@ -15,9 +15,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"git.acronis.com/abc/go-libs/v2/httpserver/middleware"
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/restapi"
+	"github.com/acronis/go-libs/httpserver/middleware"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/restapi"
 )
 
 // RouterOpts represents options for creating chi.Router.

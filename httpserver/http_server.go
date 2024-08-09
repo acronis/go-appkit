@@ -20,9 +20,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"git.acronis.com/abc/go-libs/v2/httpserver/middleware"
-	"git.acronis.com/abc/go-libs/v2/log"
-	"git.acronis.com/abc/go-libs/v2/service"
+	"github.com/acronis/go-libs/httpserver/middleware"
+	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/service"
 )
 
 // ErrInvalidMaxServingRequests error is returned when maximum number of currently serving requests is negative.

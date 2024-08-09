@@ -1,4 +1,4 @@
-module git.acronis.com/abc/go-libs/v2
+module github.com/acronis/go-libs
 
 go 1.20
 
