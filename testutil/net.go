@@ -14,13 +14,20 @@ import (
 )
 
 // GetLocalFreeTCPPort returns free (not listening by somebody) TCP port on the 127.0.0.1 network interface.
-func GetLocalFreeTCPPort() int {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func GetLocalFreeTCPPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
+	port := ln.Addr().(*net.TCPAddr).Port
+	return port, ln.Close()
+}
+
+// MustGetLocalFreeTCPPort returns free (not listening by somebody) TCP port on the 127.0.0.1 network interface.
+// It panics if an error occurs.
+func MustGetLocalFreeTCPPort() int {
+	port, err := GetLocalFreeTCPPort()
+	if err != nil {
 		panic(err)
 	}
 	return port
@@ -28,7 +35,7 @@ func GetLocalFreeTCPPort() int {
 
 // GetLocalAddrWithFreeTCPPort returns 127.0.0.1:<free-tcp-port> address.
 func GetLocalAddrWithFreeTCPPort() string {
-	return fmt.Sprintf("127.0.0.1:%d", GetLocalFreeTCPPort())
+	return fmt.Sprintf("127.0.0.1:%d", MustGetLocalFreeTCPPort())
 }
 
 // WaitListeningServer waits until the server is ready to accept TCP connection on the passing address.
