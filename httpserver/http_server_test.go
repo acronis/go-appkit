@@ -93,20 +93,16 @@ func generateCertificate(certFilePath, privKeyPath string) error {
 }
 
 func TestHTTPServer_Start_SecureServer(t *testing.T) {
-	var (
-		dirName      = "testdata/tls"
-		certFilePath = filepath.Join(dirName, "cert.pem")
-		privKeyFile  = filepath.Join(dirName, "key.pem")
-	)
+	tmpDirPath := t.TempDir()
+	certFilePath := filepath.Join(tmpDirPath, "cert.pem")
+	privKeyFilePath := filepath.Join(tmpDirPath, "key.pem")
+
 	addr := testutil.GetLocalAddrWithFreeTCPPort()
 	fatalErr := make(chan error, 1)
-	err := os.MkdirAll(dirName, 0755)
-	require.NoError(t, err)
 
-	err = generateCertificate(certFilePath, privKeyFile)
-	require.NoError(t, err)
+	require.NoError(t, generateCertificate(certFilePath, privKeyFilePath))
 
-	cfg := TLSConfig{Enabled: true, Certificate: certFilePath, Key: privKeyFile}
+	cfg := TLSConfig{Enabled: true, Certificate: certFilePath, Key: privKeyFilePath}
 	httpServer, err := New(&Config{Address: addr, TLS: cfg}, logtest.NewLogger(), Opts{})
 	require.NoError(t, err)
 
@@ -122,7 +118,9 @@ func TestHTTPServer_Start_SecureServer(t *testing.T) {
 		testutil.RequireNoErrorInChannel(t, fatalErr)
 	}()
 
-	client := buildClient(cfg.Certificate)
+	client, err := buildClient(cfg.Certificate)
+	require.NoError(t, err)
+
 	resp, err := client.Get(httpServer.URL + "/healthz")
 	defer func() { require.NoError(t, resp.Body.Close()) }()
 
@@ -130,7 +128,7 @@ func TestHTTPServer_Start_SecureServer(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
-func buildClient(certPath string) *http.Client {
+func buildClient(certPath string) (*http.Client, error) {
 	// Set up our own certificate pool
 	tlsConfig := &tls.Config{RootCAs: x509.NewCertPool()}
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
@@ -139,18 +137,18 @@ func buildClient(certPath string) *http.Client {
 	// Load our trusted certificate path
 	pemData, err := os.ReadFile(certPath)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	ok := tlsConfig.RootCAs.AppendCertsFromPEM(pemData)
 	if !ok {
-		panic("Couldn't load PEM data")
+		return nil, err
 	}
 
-	return client
+	return client, nil
 }
 
 func TestHTTPServer_StartWithStaticPort(t *testing.T) {
-	testHTTPServerStart(t, "127.0.0.1", testutil.GetLocalFreeTCPPort(), "")
+	testHTTPServerStart(t, "127.0.0.1", testutil.MustGetLocalFreeTCPPort(), "")
 }
 
 func TestHTTPServer_StartWithDynamicPort(t *testing.T) {

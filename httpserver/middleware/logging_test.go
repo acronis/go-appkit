@@ -33,9 +33,7 @@ func (h *mockLoggingNextHandler) ServeHTTP(rw http.ResponseWriter, r *http.Reque
 	h.lastContextLogger = GetLoggerFromContext(r.Context())
 	h.lastContextLoggingParams = GetLoggingParamsFromContext(r.Context())
 	rw.WriteHeader(h.respStatusCode)
-	if _, err := rw.Write([]byte(http.StatusText(h.respStatusCode))); err != nil {
-		panic(err)
-	}
+	_, _ = rw.Write([]byte(http.StatusText(h.respStatusCode)))
 }
 
 func TestLoggingHandler_ServeHTTP(t *testing.T) {
