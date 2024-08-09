@@ -177,7 +177,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 		timeout := 1 * time.Millisecond
 
 		h := NewHealthCheckHandlerContext(func(ctx context.Context) (HealthCheckResult, error) {
-			time.Sleep(timeout + 1*time.Millisecond)
+			time.Sleep(timeout + 5*time.Millisecond)
 			return HealthCheckResult{}, ctx.Err()
 		})
 		resp := httptest.NewRecorder()

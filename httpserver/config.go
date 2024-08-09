@@ -28,7 +28,7 @@ const (
 	cfgKeyServerLogRequestStart         = "server.log.requestStart"
 	cfgKeyServerLogRequestHeaders       = "server.log.requestHeaders"
 	cfgKeyServerLogExcludedEndpoints    = "server.log.excludedEndpoints"
-	cfgKeyServerLogSecretQueryParams    = "server.log.secretQueryParams" //nolint:gosec
+	cfgKeyServerLogSecretQueryParams    = "server.log.secretQueryParams" // nolint:gosec // false positive
 	cfgKeyServerLogAddRequestInfo       = "server.log.addRequestInfo"
 	cfgKeyServerLogSlowRequestThreshold = "server.log.slowRequestThreshold"
 )

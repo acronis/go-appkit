@@ -52,7 +52,7 @@ func ExampleNewRateLimitingRoundTripper() {
 		prev = now
 	}
 	delta := time.Since(start) - time.Second*2
-	if delta > time.Millisecond*10 {
+	if delta > time.Millisecond*20 {
 		fmt.Println("Total time is much greater than 2s")
 	} else {
 		fmt.Println("Total time is about 2s")

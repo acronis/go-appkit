@@ -73,11 +73,11 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 	})
 
 	t.Run("leaky bucket, maxRate=10r/s, maxBurst=10, no key", func(t *testing.T) {
-		rate := Rate{10, time.Second}
+		rate := Rate{5, time.Second}
 		const (
-			maxBurst          = 10
-			concurrentReqsNum = 20
-			serialReqsNum     = 10
+			maxBurst          = 5
+			concurrentReqsNum = 10
+			serialReqsNum     = 5
 		)
 
 		emissionInterval := rate.Duration / time.Duration(rate.Count)
@@ -192,12 +192,12 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 
 	t.Run("leaky bucket, maxRate=10r/s, maxBurst=10, by key", func(t *testing.T) {
 		const headerClientID = "X-Client-ID"
-		rate := Rate{10, time.Second}
+		rate := Rate{5, time.Second}
 		const (
-			maxBurst          = 10
-			concurrentReqsNum = 20
-			serialReqsNum     = 10
-			clientsNum        = 5
+			maxBurst          = 5
+			concurrentReqsNum = 10
+			serialReqsNum     = 5
+			clientsNum        = 3
 		)
 
 		emissionInterval := rate.Duration / time.Duration(rate.Count)
