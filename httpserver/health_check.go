@@ -83,7 +83,6 @@ func (h *HealthCheckHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) 
 			rw.WriteHeader(StatusClientClosedRequest)
 			return
 		}
-
 		rw.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -102,11 +101,9 @@ func (h *HealthCheckHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	logger := middleware.GetLoggerFromContext(r.Context())
-
 	respStatus := http.StatusOK
 	if hasUnhealthyComponent {
 		respStatus = http.StatusServiceUnavailable
 	}
-	restapi.RespondCodeAndJSON(rw, respStatus, respData, logger)
+	restapi.RespondCodeAndJSON(rw, respStatus, respData, middleware.GetLoggerFromContext(r.Context()))
 }

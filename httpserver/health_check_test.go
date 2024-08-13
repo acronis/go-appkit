@@ -9,7 +9,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,24 +19,24 @@ import (
 
 	"github.com/acronis/go-libs/httpserver/middleware"
 	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-libs/log/logtest"
 	"github.com/acronis/go-libs/restapi"
 )
 
 func TestHealthCheckHandler_ServeHTTP(t *testing.T) {
-	makeRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		return req.WithContext(middleware.NewContextWithLogger(req.Context(), log.NewDisabledLogger()))
-	}
-
 	t.Run("health-check returns error", func(t *testing.T) {
+		var internalError = errors.New("internal error")
+
 		h := NewHealthCheckHandler(func() (HealthCheckResult, error) {
-			return nil, fmt.Errorf("internal error")
+			return nil, internalError
 		})
 		resp := httptest.NewRecorder()
+		logRecorder := logtest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), logRecorder))
 
 		require.Equal(t, http.StatusInternalServerError, resp.Code)
+		requireHealthCheckErrorWasLogged(t, logRecorder, internalError)
 	})
 
 	t.Run("health-check with empty components", func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestHealthCheckHandler_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -60,7 +60,7 @@ func TestHealthCheckHandler_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusServiceUnavailable, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -79,7 +79,7 @@ func TestHealthCheckHandler_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -94,33 +94,28 @@ func TestHealthCheckHandler_ServeHTTP(t *testing.T) {
 		resp := httptest.NewRecorder()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		// cancel context immediately so default handler detects error
-		cancel()
+		cancel() // cancel context immediately so default handler detects error
 
-		ctx = middleware.NewContextWithLogger(ctx, log.NewDisabledLogger())
-		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
-
-		h.ServeHTTP(resp, req)
+		h.ServeHTTP(resp, makeHealthCheckRequest(ctx, log.NewDisabledLogger()))
 
 		require.Equal(t, StatusClientClosedRequest, resp.Code)
 	})
 }
 
 func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
-	makeRequest := func() *http.Request {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		return req.WithContext(middleware.NewContextWithLogger(req.Context(), log.NewDisabledLogger()))
-	}
-
 	t.Run("health-check returns error", func(t *testing.T) {
+		var internalError = errors.New("internal error")
+
 		h := NewHealthCheckHandlerContext(func(_ context.Context) (HealthCheckResult, error) {
-			return nil, fmt.Errorf("internal error")
+			return nil, internalError
 		})
 		resp := httptest.NewRecorder()
+		logRecorder := logtest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), logRecorder))
 
 		require.Equal(t, http.StatusInternalServerError, resp.Code)
+		requireHealthCheckErrorWasLogged(t, logRecorder, internalError)
 	})
 
 	t.Run("health-check with empty components", func(t *testing.T) {
@@ -129,7 +124,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -144,7 +139,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusServiceUnavailable, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -163,7 +158,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 		})
 		resp := httptest.NewRecorder()
 
-		h.ServeHTTP(resp, makeRequest())
+		h.ServeHTTP(resp, makeHealthCheckRequest(context.Background(), log.NewDisabledLogger()))
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		require.Equal(t, restapi.ContentTypeAppJSON, resp.Header().Get("Content-Type"))
@@ -174,22 +169,26 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 	})
 
 	t.Run("health-check responds error on client timeout", func(t *testing.T) {
-		timeout := 1 * time.Millisecond
+		const requestTimeout = 10 * time.Millisecond
 
 		h := NewHealthCheckHandlerContext(func(ctx context.Context) (HealthCheckResult, error) {
-			time.Sleep(timeout + 5*time.Millisecond)
+			select {
+			case <-ctx.Done():
+			case <-time.After(requestTimeout * 2):
+			}
 			return HealthCheckResult{}, ctx.Err()
 		})
 		resp := httptest.NewRecorder()
+		logRecorder := logtest.NewRecorder()
 
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 		defer cancel()
-		ctx = middleware.NewContextWithLogger(ctx, log.NewDisabledLogger())
-		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
 
-		h.ServeHTTP(resp, req)
+		h.ServeHTTP(resp, makeHealthCheckRequest(ctx, logRecorder))
 
 		require.Equal(t, http.StatusInternalServerError, resp.Code)
+		require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+		requireHealthCheckErrorWasLogged(t, logRecorder, ctx.Err())
 	})
 
 	t.Run("default HealthCheckContext function responds error on client cancel", func(t *testing.T) {
@@ -197,17 +196,16 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 			return HealthCheckResult{}, ctx.Err()
 		})
 		resp := httptest.NewRecorder()
+		logRecorder := logtest.NewRecorder()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		// cancel context immediately so default handler detects error
-		cancel()
+		cancel() // cancel context immediately so default handler detects error
 
-		ctx = middleware.NewContextWithLogger(ctx, log.NewDisabledLogger())
-		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
-
-		h.ServeHTTP(resp, req)
+		h.ServeHTTP(resp, makeHealthCheckRequest(ctx, logRecorder))
 
 		require.Equal(t, StatusClientClosedRequest, resp.Code)
+		require.ErrorIs(t, ctx.Err(), context.Canceled)
+		requireHealthCheckErrorWasLogged(t, logRecorder, ctx.Err())
 	})
 
 	t.Run("HealthCheckContext that doesn't return ctx.Err() responds error on client cancel", func(t *testing.T) {
@@ -217,8 +215,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 		resp := httptest.NewRecorder()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		// cancel context immediately so default handler detects error
-		cancel()
+		cancel() // cancel context immediately so default handler detects error
 
 		ctx = middleware.NewContextWithLogger(ctx, log.NewDisabledLogger())
 		req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
@@ -227,4 +224,20 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 
 		require.Equal(t, StatusClientClosedRequest, resp.Code)
 	})
+}
+
+func makeHealthCheckRequest(ctx context.Context, logger log.FieldLogger) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	return req.WithContext(middleware.NewContextWithLogger(ctx, logger))
+}
+
+func requireHealthCheckErrorWasLogged(t *testing.T, logRecorder *logtest.Recorder, wantErr error) {
+	t.Helper()
+	loggedEntries := logRecorder.Entries()
+	require.Len(t, loggedEntries, 1)
+	require.Equal(t, log.LevelError, loggedEntries[0].Level)
+	require.Contains(t, loggedEntries[0].Text, "error while checking health")
+	loggedErrorField, found := loggedEntries[0].FindField("error")
+	require.True(t, found)
+	require.Equal(t, wantErr, loggedErrorField.Any)
 }
