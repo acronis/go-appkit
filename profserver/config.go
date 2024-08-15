@@ -6,7 +6,7 @@ Released under MIT license.
 
 package profserver
 
-import "github.com/acronis/go-libs/config"
+import "github.com/acronis/go-appkit/config"
 
 const (
 	cfgKeyProfServerEnabled = "profserver.enabled"

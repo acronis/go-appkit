@@ -11,8 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/log/logtest"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/log/logtest"
 )
 
 func TestPrefixedLogger(t *testing.T) {

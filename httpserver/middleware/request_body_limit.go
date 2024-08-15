@@ -9,7 +9,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-appkit/restapi"
 )
 
 type requestBodyLimitHandler struct {

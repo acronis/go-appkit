@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/acronis/go-libs/config"
+	"github.com/acronis/go-appkit/config"
 )
 
 /*

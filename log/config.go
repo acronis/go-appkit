@@ -11,7 +11,7 @@ import (
 
 	"code.cloudfoundry.org/bytefmt"
 
-	"github.com/acronis/go-libs/config"
+	"github.com/acronis/go-appkit/config"
 )
 
 const (

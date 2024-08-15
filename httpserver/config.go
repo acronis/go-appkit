@@ -9,7 +9,7 @@ package httpserver
 import (
 	"time"
 
-	"github.com/acronis/go-libs/config"
+	"github.com/acronis/go-appkit/config"
 )
 
 const (

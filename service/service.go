@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 )
 
 // Opts represents an options for Service.

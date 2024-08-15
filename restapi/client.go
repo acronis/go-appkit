@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 )
 
 const (

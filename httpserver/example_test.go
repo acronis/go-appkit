@@ -15,13 +15,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/acronis/go-libs/config"
-	"github.com/acronis/go-libs/httpserver"
-	"github.com/acronis/go-libs/httpserver/middleware"
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/profserver"
-	"github.com/acronis/go-libs/restapi"
-	"github.com/acronis/go-libs/service"
+	"github.com/acronis/go-appkit/config"
+	"github.com/acronis/go-appkit/httpserver"
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/profserver"
+	"github.com/acronis/go-appkit/restapi"
+	"github.com/acronis/go-appkit/service"
 )
 
 /*

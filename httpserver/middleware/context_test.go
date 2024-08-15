@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 )
 
 func TestGetLoggerFromContext(t *testing.T) {
