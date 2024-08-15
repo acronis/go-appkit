@@ -21,7 +21,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/require"
 
-	"github.com/acronis/go-libs/retry"
+	"github.com/acronis/go-appkit/retry"
 )
 
 type reqInfo struct {

@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/acronis/go-libs/testutil"
+	"github.com/acronis/go-appkit/testutil"
 )
 
 func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {

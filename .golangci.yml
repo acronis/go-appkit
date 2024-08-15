@@ -11,7 +11,7 @@ linters-settings:
   lll:
     line-length: 140
   goimports:
-    local-prefixes: github.com/acronis/go-libs/
+    local-prefixes: github.com/acronis/go-appkit/
   gocritic:
     enabled-tags:
       - diagnostic

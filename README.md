@@ -1,4 +1,4 @@
-# Go libraries for writing services/applications.
+# Common Go packages for writing applications, services, and tools
 
 The project includes the following packages:
 
@@ -13,6 +13,7 @@ The project includes the following packages:
 + [restapi](./restapi) - set of simple functions for doing requests and sending responses in the REST API.
 + [retry](./restapi) - helper functions for doing retryable operations.
 + [service](./service) - ready-to-use primitives for creating services and managing their lifecycle.
++ [testutil](./testutil) - helpers for writing tests.
 
 ## Examples
 
@@ -34,13 +35,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/acronis/go-libs/config"
-	"github.com/acronis/go-libs/httpserver"
-	"github.com/acronis/go-libs/httpserver/middleware"
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/profserver"
-	"github.com/acronis/go-libs/restapi"
-	"github.com/acronis/go-libs/service"
+	"github.com/acronis/go-appkit/config"
+	"github.com/acronis/go-appkit/httpserver"
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/profserver"
+	"github.com/acronis/go-appkit/restapi"
+	"github.com/acronis/go-appkit/service"
 )
 
 func main() {

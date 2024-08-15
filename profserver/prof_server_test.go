@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/acronis/go-libs/log/logtest"
-	"github.com/acronis/go-libs/testutil"
+	"github.com/acronis/go-appkit/log/logtest"
+	"github.com/acronis/go-appkit/testutil"
 )
 
 func TestProfServer_Start(t *testing.T) {

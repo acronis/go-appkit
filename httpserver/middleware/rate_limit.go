@@ -20,8 +20,8 @@ import (
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/memstore"
 
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/restapi"
 )
 
 // DefaultRateLimitMaxKeys is a default value of maximum keys number for the RateLimit middleware.

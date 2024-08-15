@@ -18,8 +18,8 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/log/logtest"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/log/logtest"
 
 	"github.com/stretchr/testify/assert"
 )

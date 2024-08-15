@@ -1,4 +1,4 @@
-module github.com/acronis/go-libs
+module github.com/acronis/go-appkit
 
 go 1.20
 

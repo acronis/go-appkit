@@ -11,9 +11,9 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/acronis/go-libs/httpserver/middleware"
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/restapi"
 )
 
 // StatusClientClosedRequest is a special HTTP status code used by Nginx to show that the client

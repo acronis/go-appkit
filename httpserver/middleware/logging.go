@@ -16,7 +16,7 @@ import (
 
 	"github.com/ssgreg/logf"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 )
 
 const (

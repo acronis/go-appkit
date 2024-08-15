@@ -16,8 +16,8 @@ import (
 
 	"github.com/hashicorp/golang-lru/simplelru"
 
-	"github.com/acronis/go-libs/log"
-	"github.com/acronis/go-libs/restapi"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/restapi"
 )
 
 // DefaultInFlightLimitMaxKeys is a default value of maximum keys number for the InFlightLimit middleware.

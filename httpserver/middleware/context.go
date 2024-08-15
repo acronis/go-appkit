@@ -10,7 +10,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 )
 
 type ctxKey int

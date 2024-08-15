@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/acronis/go-libs/log"
+	"github.com/acronis/go-appkit/log"
 
 	"github.com/stretchr/testify/require"
 )
