@@ -17,6 +17,7 @@ require (
 	github.com/ssgreg/logftext v1.1.1
 	github.com/stretchr/testify v1.9.0
 	github.com/throttled/throttled/v2 v2.12.0
+	github.com/vasayxtx/go-glob v1.2.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/time v0.6.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

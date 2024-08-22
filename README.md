@@ -6,6 +6,7 @@ The project includes the following packages:
 + [httpclient](./httpclient) - helpers and a set of `http.RoundTripper` implementations for simplifying typical HTTP client operations (e.g. retries, client-side throttling, setting any header for each request, etc.).
 + [httpserver](./httpserver) - configurable HTTP server (wrapper around `http.Server`) that includes graceful shutdown support, panic recovery, metrics collection, and logging.
 + [httpserver/middleware](./httpserver/middleware) - collection of middlewares for HTTP server (e.g. request logging, metrics collection, panic recovery, in-flight request limiting, rate limiting, request-id tracing, etc.).
++ [httpserver/middleware/throttle](./httpserver/middleware/throttle) - ready-to-use middleware for server-side throttling that can be flexibly configured via JSON or YAML.
 + [log](./log) - unified interface for structured logging with included configurable adapter for tiny, fast, and memory-efficient (zero-allocation) [logf](https://github.com/ssgreg/logf) logger.
 + [lrucache](./lrucache) - in-memory LRU cache with collecting Prometheus metrics.
 + [netutil](./netutil) - utilities for working with network.
