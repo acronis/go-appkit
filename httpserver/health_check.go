@@ -78,7 +78,9 @@ func NewHealthCheckHandlerContext(fn HealthCheckContext) *HealthCheckHandler {
 func (h *HealthCheckHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	hcResult, err := h.healthCheckFn(r.Context())
 	if err != nil {
-		middleware.GetLoggerFromContext(r.Context()).Error("error while checking health", log.Error(err))
+		if logger := middleware.GetLoggerFromContext(r.Context()); logger != nil {
+			logger.Error("error while checking health", log.Error(err))
+		}
 		if errors.Is(err, context.Canceled) {
 			rw.WriteHeader(StatusClientClosedRequest)
 			return
