@@ -4,7 +4,7 @@ Copyright © 2024 Acronis International GmbH.
 Released under MIT license.
 */
 
-package throttle
+package throttle_test
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/acronis/go-appkit/config"
+	"github.com/acronis/go-appkit/httpserver/middleware/throttle"
 )
 
 const apiErrDomain = "MyService"
@@ -73,7 +74,7 @@ rules:
     tags: authenticated_reqs
 `))
 	configLoader := config.NewLoader(config.NewViperAdapter())
-	cfg := &Config{}
+	cfg := &throttle.Config{}
 	if err := configLoader.LoadFromReader(configReader, config.DataTypeYAML, cfg); err != nil {
 		stdlog.Fatal(err)
 		return
@@ -155,16 +156,17 @@ rules:
 	// [9] PUT /api/2/tenants/446507ba-2f9b-4347-adbc-63581383ba25 204
 }
 
-func makeExampleTestServer(cfg *Config, longWorkDelay time.Duration) *httptest.Server {
-	throttleMetrics := NewMetricsCollector("")
+func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) *httptest.Server {
+	throttleMetrics := throttle.NewMetricsCollector("")
 	throttleMetrics.MustRegister()
 	defer throttleMetrics.Unregister()
 
 	// Configure middleware that should do global throttling ("all_reqs" tag says about that).
-	allReqsThrottleMiddleware := MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, MiddlewareOpts{Tags: []string{"all_reqs"}})
+	allReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, throttle.MiddlewareOpts{
+		Tags: []string{"all_reqs"}})
 
 	// Configure middleware that should do per-client throttling based on the username from basic auth ("authenticated_reqs" tag says about that).
-	authenticatedReqsThrottleMiddleware := MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, MiddlewareOpts{
+	authenticatedReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, throttle.MiddlewareOpts{
 		Tags: []string{"authenticated_reqs"},
 		GetKeyIdentity: func(r *http.Request) (key string, bypass bool, err error) {
 			username, _, ok := r.BasicAuth()

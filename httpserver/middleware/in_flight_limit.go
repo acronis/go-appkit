@@ -234,7 +234,7 @@ func (h *inFlightLimitHandler) makeParams(key string, backlogged bool) InFlightL
 	}
 }
 
-// DefaultInFlightLimitOnReject sends HTTP response in a typical go-libs way when the in-flight limit is exceeded.
+// DefaultInFlightLimitOnReject sends HTTP response in a typical go-appkit way when the in-flight limit is exceeded.
 func DefaultInFlightLimitOnReject(
 	rw http.ResponseWriter, r *http.Request, params InFlightLimitParams, next http.Handler, logger log.FieldLogger,
 ) {
@@ -252,7 +252,7 @@ func DefaultInFlightLimitOnReject(
 	restapi.RespondError(rw, params.ResponseStatusCode, apiErr, logger)
 }
 
-// DefaultInFlightLimitOnRejectInDryRun sends HTTP response in a typical go-libs way
+// DefaultInFlightLimitOnRejectInDryRun sends HTTP response in a typical go-appkit way
 // when the in-flight limit is exceeded in the dry-run mode.
 func DefaultInFlightLimitOnRejectInDryRun(
 	rw http.ResponseWriter, r *http.Request, params InFlightLimitParams, next http.Handler, logger log.FieldLogger,
@@ -267,7 +267,7 @@ func DefaultInFlightLimitOnRejectInDryRun(
 	next.ServeHTTP(rw, r)
 }
 
-// DefaultInFlightLimitOnError sends HTTP response in a typical go-libs way in case
+// DefaultInFlightLimitOnError sends HTTP response in a typical go-appkit way in case
 // when the error occurs during the in-flight limiting.
 func DefaultInFlightLimitOnError(
 	rw http.ResponseWriter, r *http.Request, params InFlightLimitParams, err error, next http.Handler, logger log.FieldLogger,

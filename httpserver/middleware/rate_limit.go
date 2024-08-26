@@ -284,7 +284,7 @@ func GetRetryAfterEstimatedTime(_ *http.Request, estimatedTime time.Duration) ti
 	return estimatedTime
 }
 
-// DefaultRateLimitOnReject sends HTTP response in a typical go-libs way when the rate limit is exceeded.
+// DefaultRateLimitOnReject sends HTTP response in a typical go-appkit way when the rate limit is exceeded.
 func DefaultRateLimitOnReject(
 	rw http.ResponseWriter, r *http.Request, params RateLimitParams, next http.Handler, logger log.FieldLogger,
 ) {
@@ -301,7 +301,7 @@ func DefaultRateLimitOnReject(
 	restapi.RespondError(rw, params.ResponseStatusCode, apiErr, logger)
 }
 
-// DefaultRateLimitOnError sends HTTP response in a typical go-libs way in case when the error occurs during the in-flight limiting.
+// DefaultRateLimitOnError sends HTTP response in a typical go-appkit way in case when the error occurs during the in-flight limiting.
 func DefaultRateLimitOnError(
 	rw http.ResponseWriter, r *http.Request, params RateLimitParams, err error, next http.Handler, logger log.FieldLogger,
 ) {
@@ -311,7 +311,7 @@ func DefaultRateLimitOnError(
 	restapi.RespondInternalError(rw, params.ErrDomain, logger)
 }
 
-// DefaultRateLimitOnRejectInDryRun sends HTTP response in a typical go-libs way when the rate limit is exceeded in the dry-run mode.
+// DefaultRateLimitOnRejectInDryRun sends HTTP response in a typical go-appkit way when the rate limit is exceeded in the dry-run mode.
 func DefaultRateLimitOnRejectInDryRun(
 	rw http.ResponseWriter, r *http.Request, params RateLimitParams, next http.Handler, logger log.FieldLogger,
 ) {

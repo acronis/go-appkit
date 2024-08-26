@@ -197,7 +197,7 @@ func TestDoRequestAndUnmarshalJSON(t *testing.T) {
 	t.Run("ErrorResponseData with code 400", func(t *testing.T) {
 		resp := &ErrorResponseData{
 			Err: &Error{
-				Domain: "go-libs",
+				Domain: "go-appkit",
 			},
 		}
 		reqData := RequestData{
