@@ -169,7 +169,7 @@ func TestHealthCheckHandlerContext_ServeHTTP(t *testing.T) {
 	})
 
 	t.Run("health-check responds error on client timeout", func(t *testing.T) {
-		const requestTimeout = 10 * time.Millisecond
+		const requestTimeout = 100 * time.Millisecond
 
 		h := NewHealthCheckHandlerContext(func(ctx context.Context) (HealthCheckResult, error) {
 			select {
