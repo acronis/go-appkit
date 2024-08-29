@@ -214,8 +214,14 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 	inFlightGauge.Inc()
 	defer inFlightGauge.Dec()
 
+	r = r.WithContext(NewContextWithHTTPMetricsEnabled(r.Context()))
+
 	wrw := WrapResponseWriterIfNeeded(rw, r.ProtoMajor)
 	defer func() {
+		if !IsHTTPMetricsEnabledInContext(r.Context()) {
+			return
+		}
+
 		if reqInfo.routePattern == "" {
 			reqInfo.routePattern = h.getRoutePattern(r)
 		}

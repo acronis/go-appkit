@@ -22,6 +22,7 @@ const (
 	ctxKeyLoggingParams
 	ctxKeyTraceID
 	ctxKeyRequestStartTime
+	ctxKeyHTTPMetricsStatus
 )
 
 func getStringFromContext(ctx context.Context, key ctxKey) string {
@@ -99,4 +100,28 @@ func NewContextWithRequestStartTime(ctx context.Context, startTime time.Time) co
 func GetRequestStartTimeFromContext(ctx context.Context) time.Time {
 	startTime, _ := ctx.Value(ctxKeyRequestStartTime).(time.Time)
 	return startTime
+}
+
+// NewContextWithHTTPMetricsEnabled creates a new context with special flag which can toggle HTTP metrics status.
+func NewContextWithHTTPMetricsEnabled(ctx context.Context) context.Context {
+	status := true
+	return context.WithValue(ctx, ctxKeyHTTPMetricsStatus, &status)
+}
+
+// IsHTTPMetricsEnabledInContext checks whether HTTP metrics are enabled in the context.
+func IsHTTPMetricsEnabledInContext(ctx context.Context) bool {
+	value := ctx.Value(ctxKeyHTTPMetricsStatus)
+	if value == nil {
+		return false
+	}
+	return *value.(*bool)
+}
+
+// DisableHTTPMetricsInContext disables HTTP metrics processing in the context.
+func DisableHTTPMetricsInContext(ctx context.Context) {
+	value := ctx.Value(ctxKeyHTTPMetricsStatus)
+	if value == nil {
+		return
+	}
+	*value.(*bool) = false
 }
