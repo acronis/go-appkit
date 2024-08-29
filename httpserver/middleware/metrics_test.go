@@ -28,6 +28,13 @@ func (h *mockHTTPRequestMetricsNextHandler) ServeHTTP(rw http.ResponseWriter, r 
 	rw.WriteHeader(h.statusCodeToReturn)
 }
 
+type mockHTTPRequestMetricsDisabledHandler struct{}
+
+func (h *mockHTTPRequestMetricsDisabledHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	DisableHTTPMetricsInContext(r.Context())
+	rw.WriteHeader(http.StatusOK)
+}
+
 func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 	makeLabels := func(method, routePattern, uaType, statusCode string) prometheus.Labels {
 		return prometheus.Labels{
@@ -172,5 +179,19 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 			hist := collector.Durations.With(labels).(prometheus.Histogram)
 			testutil.AssertSamplesCountInHistogram(t, hist, 1)
 		}
+	})
+
+	t.Run("not collect if disabled", func(t *testing.T) {
+		collector := NewHTTPRequestMetricsCollector()
+		next := &mockHTTPRequestMetricsDisabledHandler{}
+		req := httptest.NewRequest(http.MethodGet, "/hello", nil)
+		req.Header.Set("User-Agent", "http-client")
+		resp := httptest.NewRecorder()
+		h := HTTPRequestMetrics(collector, getRoutePattern)(next)
+		h.ServeHTTP(resp, req)
+		assert.Equal(t, http.StatusOK, resp.Code)
+		labels := makeLabels(http.MethodGet, "/hello", "http-client", "200")
+		hist := collector.Durations.With(labels).(prometheus.Histogram)
+		testutil.AssertSamplesCountInHistogram(t, hist, 0)
 	})
 }
