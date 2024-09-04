@@ -74,7 +74,7 @@ func configureRouter(router chi.Router, logger log.FieldLogger, opts RouterOpts)
 
 // nolint // hugeParam: opts is heavy, it's ok in this case.
 func applyDefaultMiddlewaresToRouter(
-	router chi.Router, cfg *Config, logger log.FieldLogger, opts Opts, metricsCollector *middleware.HTTPRequestMetricsCollector,
+	router chi.Router, cfg *Config, logger log.FieldLogger, opts Opts, promMetrics *middleware.HTTPRequestPrometheusMetrics,
 ) error {
 	router.Use(func(handler http.Handler) http.Handler {
 		return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -109,7 +109,7 @@ func applyDefaultMiddlewaresToRouter(
 		// Custom route pattern parser
 		getRoutePattern = opts.HTTPRequestMetrics.GetRoutePattern
 	}
-	metricsMiddleware := middleware.HTTPRequestMetricsWithOpts(metricsCollector, getRoutePattern,
+	metricsMiddleware := middleware.HTTPRequestMetricsWithOpts(promMetrics, getRoutePattern,
 		middleware.HTTPRequestMetricsOpts{
 			GetUserAgentType:  opts.HTTPRequestMetrics.GetUserAgentType,
 			ExcludedEndpoints: systemEndpoints,

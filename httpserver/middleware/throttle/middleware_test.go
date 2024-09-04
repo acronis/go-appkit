@@ -593,7 +593,7 @@ func makeHandlerWrappedIntoMiddleware(
 	cfg *Config, blockCh chan struct{}, tags []string, buildHandlerAtInit bool,
 ) (http.Handler, *testCounters) {
 	c := &testCounters{}
-	mid := MiddlewareWithOpts(cfg, testErrDomain, NewMetricsCollector(""), MiddlewareOpts{
+	mid := MiddlewareWithOpts(cfg, testErrDomain, NewPrometheusMetrics(), MiddlewareOpts{
 		GetKeyIdentity: func(r *http.Request) (key string, bypass bool, err error) {
 			username, _, ok := r.BasicAuth()
 			if !ok {

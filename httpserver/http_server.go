@@ -91,9 +91,9 @@ type HTTPServer struct {
 	Logger          log.FieldLogger
 	ShutdownTimeout time.Duration
 
-	port                    int32
-	httpServerDone          chan struct{}
-	httpReqMetricsCollector *middleware.HTTPRequestMetricsCollector
+	port                     int32
+	httpServerDone           chan struct{}
+	httpReqPrometheusMetrics *middleware.HTTPRequestPrometheusMetrics
 }
 
 var _ service.Unit = (*HTTPServer)(nil)
@@ -102,20 +102,20 @@ var _ service.MetricsRegisterer = (*HTTPServer)(nil)
 // New creates a new HTTPServer with predefined logging, metrics collecting,
 // recovering after panics and health-checking functionality.
 func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { //nolint // hugeParam: opts is heavy, it's ok in this case.
-	httpReqMetricsCollector := middleware.NewHTTPRequestMetricsCollectorWithOpts(
-		middleware.HTTPRequestMetricsCollectorOpts{
+	httpReqPromMetrics := middleware.NewHTTPRequestPrometheusMetricsWithOpts(
+		middleware.HTTPRequestPrometheusMetricsOpts{
 			Namespace:       opts.HTTPRequestMetrics.Namespace,
 			DurationBuckets: opts.HTTPRequestMetrics.DurationBuckets,
 			ConstLabels:     opts.HTTPRequestMetrics.ConstLabels,
 		})
 	router := chi.NewRouter()
-	if err := applyDefaultMiddlewaresToRouter(router, cfg, logger, opts, httpReqMetricsCollector); err != nil {
+	if err := applyDefaultMiddlewaresToRouter(router, cfg, logger, opts, httpReqPromMetrics); err != nil {
 		return nil, err
 	}
 	configureRouter(router, logger, opts.routerOpts())
 
 	appSrv := NewWithHandler(cfg, logger, router)
-	appSrv.httpReqMetricsCollector = httpReqMetricsCollector
+	appSrv.httpReqPrometheusMetrics = httpReqPromMetrics
 	return appSrv, nil
 }
 
@@ -259,15 +259,15 @@ func (s *HTTPServer) Stop(gracefully bool) error {
 
 // MustRegisterMetrics registers metrics in Prometheus client and panics if any error occurs.
 func (s *HTTPServer) MustRegisterMetrics() {
-	if s.httpReqMetricsCollector != nil {
-		s.httpReqMetricsCollector.MustRegister()
+	if s.httpReqPrometheusMetrics != nil {
+		s.httpReqPrometheusMetrics.MustRegister()
 	}
 }
 
 // UnregisterMetrics unregisters metrics in Prometheus client.
 func (s *HTTPServer) UnregisterMetrics() {
-	if s.httpReqMetricsCollector != nil {
-		s.httpReqMetricsCollector.Unregister()
+	if s.httpReqPrometheusMetrics != nil {
+		s.httpReqPrometheusMetrics.Unregister()
 	}
 }
 

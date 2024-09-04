@@ -157,16 +157,16 @@ rules:
 }
 
 func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) *httptest.Server {
-	throttleMetrics := throttle.NewMetricsCollector("")
-	throttleMetrics.MustRegister()
-	defer throttleMetrics.Unregister()
+	promMetrics := throttle.NewPrometheusMetrics()
+	promMetrics.MustRegister()
+	defer promMetrics.Unregister()
 
 	// Configure middleware that should do global throttling ("all_reqs" tag says about that).
-	allReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, throttle.MiddlewareOpts{
+	allReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
 		Tags: []string{"all_reqs"}})
 
 	// Configure middleware that should do per-client throttling based on the username from basic auth ("authenticated_reqs" tag says about that).
-	authenticatedReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, throttleMetrics, throttle.MiddlewareOpts{
+	authenticatedReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
 		Tags: []string{"authenticated_reqs"},
 		GetKeyIdentity: func(r *http.Request) (key string, bypass bool, err error) {
 			username, _, ok := r.BasicAuth()
