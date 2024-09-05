@@ -30,7 +30,7 @@ func Example() {
 		RequestBodyLimit(1024*1024, errDomain),
 	)
 
-	metricsCollector := NewHTTPRequestMetricsCollector()
+	metricsCollector := NewHTTPRequestPrometheusMetrics()
 	router.Use(HTTPRequestMetricsWithOpts(metricsCollector, getChiRoutePattern, HTTPRequestMetricsOpts{
 		ExcludedEndpoints: []string{"/metrics", "/healthz"}, // Metrics will not be collected for "/metrics" and "/healthz" endpoints.
 	}))

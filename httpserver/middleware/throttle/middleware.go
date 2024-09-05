@@ -20,7 +20,7 @@ import (
 	"github.com/acronis/go-appkit/restapi"
 )
 
-// RuleLogFieldName is a logged field that contains name of the throttling rule.
+// RuleLogFieldName is a logged field that contains the name of the throttling rule.
 const RuleLogFieldName = "throttle_rule"
 
 // MiddlewareOpts represents an options for Middleware.
@@ -58,9 +58,9 @@ type MiddlewareOpts struct {
 	BuildHandlerAtInit bool
 }
 
-// RateLimitOpts returns rateLimitMiddlewareParams that may be used for constructing RateLimitMiddleware.
-func (opts MiddlewareOpts) RateLimitOpts() rateLimitMiddlewareParams {
-	return rateLimitMiddlewareParams{
+// rateLimitOpts returns options for constructing rate limiting middleware.
+func (opts MiddlewareOpts) rateLimitOpts() rateLimitMiddlewareOpts {
+	return rateLimitMiddlewareOpts{
 		GetKeyIdentity:            opts.GetKeyIdentity,
 		RateLimitOnReject:         opts.RateLimitOnReject,
 		RateLimitOnRejectInDryRun: opts.RateLimitOnRejectInDryRun,
@@ -68,9 +68,9 @@ func (opts MiddlewareOpts) RateLimitOpts() rateLimitMiddlewareParams {
 	}
 }
 
-// InFlightLimitOpts returns inFlightLimitMiddlewareParams that may be used for constructing InFlightLimitMiddleware.
-func (opts MiddlewareOpts) InFlightLimitOpts() inFlightLimitMiddlewareParams {
-	return inFlightLimitMiddlewareParams{
+// inFlightLimitOpts returns options for constructing in-flight limiting middleware.
+func (opts MiddlewareOpts) inFlightLimitOpts() inFlightLimitMiddlewareOpts {
+	return inFlightLimitMiddlewareOpts{
 		GetKeyIdentity:                opts.GetKeyIdentity,
 		InFlightLimitOnReject:         opts.InFlightLimitOnReject,
 		InFlightLimitOnRejectInDryRun: opts.InFlightLimitOnRejectInDryRun,
@@ -79,12 +79,16 @@ func (opts MiddlewareOpts) InFlightLimitOpts() inFlightLimitMiddlewareParams {
 }
 
 // Middleware is a middleware that throttles incoming HTTP requests based on the passed configuration.
-func Middleware(cfg *Config, errDomain string, mc *MetricsCollector) func(next http.Handler) http.Handler {
+func Middleware(cfg *Config, errDomain string, mc MetricsCollector) func(next http.Handler) http.Handler {
 	return MiddlewareWithOpts(cfg, errDomain, mc, MiddlewareOpts{})
 }
 
 // MiddlewareWithOpts is a more configurable version of Middleware.
-func MiddlewareWithOpts(cfg *Config, errDomain string, mc *MetricsCollector, opts MiddlewareOpts) func(next http.Handler) http.Handler {
+func MiddlewareWithOpts(cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts) func(next http.Handler) http.Handler {
+	if mc == nil {
+		mc = disabledMetrics{}
+	}
+
 	mustMakeRoutesManager := func(next http.Handler) *restapi.RoutesManager {
 		routes, err := makeRoutes(cfg, errDomain, mc, opts, next)
 		if err != nil {
@@ -134,7 +138,7 @@ func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 // nolint: gocyclo // we would like to have high functional cohesion here.
 func makeRoutes(
-	cfg *Config, errDomain string, mc *MetricsCollector, opts MiddlewareOpts, handler http.Handler,
+	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts, handler http.Handler,
 ) (routes []restapi.Route, err error) {
 	for _, rule := range cfg.Rules {
 		if len(rule.RateLimits) == 0 && len(rule.InFlightLimits) == 0 {
@@ -156,7 +160,7 @@ func makeRoutes(
 			}
 			var inFlightLimitMw func(next http.Handler) http.Handler
 			inFlightLimitMw, err = makeInFlightLimitMiddleware(
-				&cfgZone, errDomain, rule.Name(), mc, opts.InFlightLimitOpts())
+				&cfgZone, errDomain, rule.Name(), mc, opts.inFlightLimitOpts())
 			if err != nil {
 				return nil, fmt.Errorf("new in-flight limit middleware for zone %q: %w", zoneName, err)
 			}
@@ -172,7 +176,7 @@ func makeRoutes(
 			}
 			var rateLimitMw func(next http.Handler) http.Handler
 			rateLimitMw, err = makeRateLimitMiddleware(
-				&cfgZone, errDomain, rule.Name(), mc, opts.RateLimitOpts())
+				&cfgZone, errDomain, rule.Name(), mc, opts.rateLimitOpts())
 			if err != nil {
 				return nil, fmt.Errorf("new rate limit middleware for zone %q: %w", zoneName, err)
 			}
@@ -197,8 +201,8 @@ func makeRoutes(
 	return routes, nil
 }
 
-// rateLimitMiddlewareParams represents an options for RateLimitMiddleware.
-type rateLimitMiddlewareParams struct {
+// rateLimitMiddlewareOpts represents an options for RateLimitMiddleware.
+type rateLimitMiddlewareOpts struct {
 	// GetKeyIdentity is a function that returns identity string representation.
 	// The returned string is used as a key for zone when key.type is "identity".
 	GetKeyIdentity func(r *http.Request) (key string, bypass bool, err error)
@@ -218,8 +222,8 @@ func makeRateLimitMiddleware(
 	cfg *RateLimitZoneConfig,
 	errDomain string,
 	ruleName string,
-	mc *MetricsCollector,
-	opts rateLimitMiddlewareParams,
+	mc MetricsCollector,
+	opts rateLimitMiddlewareOpts,
 ) (func(next http.Handler) http.Handler, error) {
 	var alg middleware.RateLimitAlg
 	switch cfg.Alg {
@@ -256,11 +260,10 @@ func makeRateLimitMiddleware(
 	if onReject == nil {
 		onReject = middleware.DefaultRateLimitOnReject
 	}
-	rejectPromLabels := makeCommonPromLabels(false, ruleName)
 	onRejectWithMetrics := func(
 		rw http.ResponseWriter, r *http.Request, params middleware.RateLimitParams, next http.Handler, logger log.FieldLogger,
 	) {
-		mc.RateLimitRejects.With(rejectPromLabels).Inc()
+		mc.IncRateLimitRejects(ruleName, false)
 		if logger != nil {
 			logger = logger.With(log.String(RuleLogFieldName, ruleName))
 		}
@@ -271,11 +274,10 @@ func makeRateLimitMiddleware(
 	if onRejectInDryRun == nil {
 		onRejectInDryRun = middleware.DefaultRateLimitOnRejectInDryRun
 	}
-	rejectInDryRunPromLabels := makeCommonPromLabels(true, ruleName)
 	onRejectInDryRunWithMetrics := func(
 		rw http.ResponseWriter, r *http.Request, params middleware.RateLimitParams, next http.Handler, logger log.FieldLogger,
 	) {
-		mc.RateLimitRejects.With(rejectInDryRunPromLabels).Inc()
+		mc.IncRateLimitRejects(ruleName, true)
 		if logger != nil {
 			logger = logger.With(log.String(RuleLogFieldName, ruleName))
 		}
@@ -299,7 +301,7 @@ func makeRateLimitMiddleware(
 	}), nil
 }
 
-type inFlightLimitMiddlewareParams struct {
+type inFlightLimitMiddlewareOpts struct {
 	// GetKeyIdentity is a function that returns identity string representation.
 	// The returned string is used as a key for zone when key.type is "identity".
 	GetKeyIdentity func(r *http.Request) (key string, bypass bool, err error)
@@ -319,8 +321,8 @@ func makeInFlightLimitMiddleware(
 	cfg *InFlightLimitZoneConfig,
 	errDomain string,
 	ruleName string,
-	mc *MetricsCollector,
-	opts inFlightLimitMiddlewareParams,
+	mc MetricsCollector,
+	opts inFlightLimitMiddlewareOpts,
 ) (func(next http.Handler) http.Handler, error) {
 	if cfg.Key.Type == ZoneKeyTypeIdentity && opts.GetKeyIdentity == nil {
 		return nil, fmt.Errorf("GetKeyIdentity is required for identity key type")
@@ -342,11 +344,10 @@ func makeInFlightLimitMiddleware(
 	if onReject == nil {
 		onReject = middleware.DefaultInFlightLimitOnReject
 	}
-	rejectPromLabels := makeCommonPromLabels(false, ruleName)
 	onRejectWithMetrics := func(
 		rw http.ResponseWriter, r *http.Request, params middleware.InFlightLimitParams, next http.Handler, logger log.FieldLogger,
 	) {
-		mc.InFlightLimitRejects.With(makePromLabelsForInFlightLimit(rejectPromLabels, params.RequestBacklogged)).Inc()
+		mc.IncInFlightLimitRejects(ruleName, false, params.RequestBacklogged)
 		if logger != nil {
 			logger = logger.With(log.String(RuleLogFieldName, ruleName))
 		}
@@ -357,11 +358,10 @@ func makeInFlightLimitMiddleware(
 	if onRejectInDryRun == nil {
 		onRejectInDryRun = middleware.DefaultInFlightLimitOnRejectInDryRun
 	}
-	rejectInDryRunPromLabels := makeCommonPromLabels(true, ruleName)
 	onRejectInDryRunWithMetrics := func(
 		rw http.ResponseWriter, r *http.Request, params middleware.InFlightLimitParams, next http.Handler, logger log.FieldLogger,
 	) {
-		mc.InFlightLimitRejects.With(makePromLabelsForInFlightLimit(rejectInDryRunPromLabels, params.RequestBacklogged)).Inc()
+		mc.IncInFlightLimitRejects(ruleName, true, params.RequestBacklogged)
 		if logger != nil {
 			logger = logger.With(log.String(RuleLogFieldName, ruleName))
 		}

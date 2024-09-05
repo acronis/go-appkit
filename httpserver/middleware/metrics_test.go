@@ -132,7 +132,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 				for k := range tt.curriedLabels {
 					curriedLabelNames = append(curriedLabelNames, k)
 				}
-				collector := NewHTTPRequestMetricsCollectorWithOpts(HTTPRequestMetricsCollectorOpts{
+				collector := NewHTTPRequestPrometheusMetricsWithOpts(HTTPRequestPrometheusMetricsOpts{
 					CurriedLabelNames: curriedLabelNames,
 				})
 				collector = collector.MustCurryWith(tt.curriedLabels)
@@ -168,30 +168,30 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 	})
 
 	t.Run("collect 500 on panic", func(t *testing.T) {
-		collector := NewHTTPRequestMetricsCollector()
+		promMetrics := NewHTTPRequestPrometheusMetrics()
 		next := &mockRecoveryNextHandler{}
 		req := httptest.NewRequest(http.MethodGet, "/internal-error", nil)
 		resp := httptest.NewRecorder()
-		h := HTTPRequestMetrics(collector, getRoutePattern)(next)
+		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		if assert.Panics(t, func() { h.ServeHTTP(resp, req) }) {
 			assert.Equal(t, 1, next.called)
 			labels := makeLabels(http.MethodGet, "/internal-error", "http-client", "500")
-			hist := collector.Durations.With(labels).(prometheus.Histogram)
+			hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 			testutil.AssertSamplesCountInHistogram(t, hist, 1)
 		}
 	})
 
 	t.Run("not collect if disabled", func(t *testing.T) {
-		collector := NewHTTPRequestMetricsCollector()
+		promMetrics := NewHTTPRequestPrometheusMetrics()
 		next := &mockHTTPRequestMetricsDisabledHandler{}
 		req := httptest.NewRequest(http.MethodGet, "/hello", nil)
 		req.Header.Set("User-Agent", "http-client")
 		resp := httptest.NewRecorder()
-		h := HTTPRequestMetrics(collector, getRoutePattern)(next)
+		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		h.ServeHTTP(resp, req)
 		assert.Equal(t, http.StatusOK, resp.Code)
 		labels := makeLabels(http.MethodGet, "/hello", "http-client", "200")
-		hist := collector.Durations.With(labels).(prometheus.Histogram)
+		hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 		testutil.AssertSamplesCountInHistogram(t, hist, 0)
 	})
 }

@@ -27,11 +27,30 @@ const (
 	userAgentTypeHTTPClient = "http-client"
 )
 
+// HTTPRequestInfoMetrics represents a request info for collecting metrics.
+type HTTPRequestInfoMetrics struct {
+	Method        string
+	RoutePattern  string
+	UserAgentType string
+}
+
+// HTTPRequestMetricsCollector is an interface for collecting metrics for incoming HTTP requests.
+type HTTPRequestMetricsCollector interface {
+	// IncInFlightRequests increments the counter of in-flight requests.
+	IncInFlightRequests(requestInfo HTTPRequestInfoMetrics)
+
+	// DecInFlightRequests decrements the counter of in-flight requests.
+	DecInFlightRequests(requestInfo HTTPRequestInfoMetrics)
+
+	// ObserveRequestFinish observes the duration of the request and the status code.
+	ObserveRequestFinish(requestInfo HTTPRequestInfoMetrics, status int, startTime time.Time)
+}
+
 // DefaultHTTPRequestDurationBuckets is default buckets into which observations of serving HTTP requests are counted.
 var DefaultHTTPRequestDurationBuckets = []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150, 300, 600}
 
-// HTTPRequestMetricsCollectorOpts represents an options for HTTPRequestMetricsCollector.
-type HTTPRequestMetricsCollectorOpts struct {
+// HTTPRequestPrometheusMetricsOpts represents an options for HTTPRequestPrometheusMetrics.
+type HTTPRequestPrometheusMetricsOpts struct {
 	// Namespace is a namespace for metrics. It will be prepended to all metric names.
 	Namespace string
 
@@ -42,26 +61,26 @@ type HTTPRequestMetricsCollectorOpts struct {
 	ConstLabels prometheus.Labels
 
 	// CurriedLabelNames is a list of label names that will be curried with the provided labels.
-	// See HTTPRequestMetricsCollector.MustCurryWith method for more details.
+	// See HTTPRequestPrometheusMetrics.MustCurryWith method for more details.
 	// Keep in mind that if this list is not empty,
-	// HTTPRequestMetricsCollector.MustCurryWith method must be called further with the same labels.
+	// HTTPRequestPrometheusMetrics.MustCurryWith method must be called further with the same labels.
 	// Otherwise, the collector will panic.
 	CurriedLabelNames []string
 }
 
-// HTTPRequestMetricsCollector represents collector of metrics for incoming HTTP requests.
-type HTTPRequestMetricsCollector struct {
+// HTTPRequestPrometheusMetrics represents collector of metrics for incoming HTTP requests.
+type HTTPRequestPrometheusMetrics struct {
 	Durations *prometheus.HistogramVec
 	InFlight  *prometheus.GaugeVec
 }
 
-// NewHTTPRequestMetricsCollector creates a new metrics collector.
-func NewHTTPRequestMetricsCollector() *HTTPRequestMetricsCollector {
-	return NewHTTPRequestMetricsCollectorWithOpts(HTTPRequestMetricsCollectorOpts{})
+// NewHTTPRequestPrometheusMetrics creates a new instance of HTTPRequestPrometheusMetrics with default options.
+func NewHTTPRequestPrometheusMetrics() *HTTPRequestPrometheusMetrics {
+	return NewHTTPRequestPrometheusMetricsWithOpts(HTTPRequestPrometheusMetricsOpts{})
 }
 
-// NewHTTPRequestMetricsCollectorWithOpts is a more configurable version of creating HTTPRequestMetricsCollector.
-func NewHTTPRequestMetricsCollectorWithOpts(opts HTTPRequestMetricsCollectorOpts) *HTTPRequestMetricsCollector {
+// NewHTTPRequestPrometheusMetricsWithOpts creates a new instance of HTTPRequestPrometheusMetrics with the provided options.
+func NewHTTPRequestPrometheusMetricsWithOpts(opts HTTPRequestPrometheusMetricsOpts) *HTTPRequestPrometheusMetrics {
 	makeLabelNames := func(names ...string) []string {
 		l := append(make([]string, 0, len(opts.CurriedLabelNames)+len(names)), opts.CurriedLabelNames...)
 		return append(l, names...)
@@ -101,52 +120,62 @@ func NewHTTPRequestMetricsCollectorWithOpts(opts HTTPRequestMetricsCollectorOpts
 		),
 	)
 
-	return &HTTPRequestMetricsCollector{
+	return &HTTPRequestPrometheusMetrics{
 		Durations: durations,
 		InFlight:  inFlight,
 	}
 }
 
 // MustCurryWith curries the metrics collector with the provided labels.
-func (c *HTTPRequestMetricsCollector) MustCurryWith(labels prometheus.Labels) *HTTPRequestMetricsCollector {
-	return &HTTPRequestMetricsCollector{
-		Durations: c.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
-		InFlight:  c.InFlight.MustCurryWith(labels),
+func (pm *HTTPRequestPrometheusMetrics) MustCurryWith(labels prometheus.Labels) *HTTPRequestPrometheusMetrics {
+	return &HTTPRequestPrometheusMetrics{
+		Durations: pm.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
+		InFlight:  pm.InFlight.MustCurryWith(labels),
 	}
 }
 
 // MustRegister does registration of metrics collector in Prometheus and panics if any error occurs.
-func (c *HTTPRequestMetricsCollector) MustRegister() {
+func (pm *HTTPRequestPrometheusMetrics) MustRegister() {
 	prometheus.MustRegister(
-		c.Durations,
-		c.InFlight,
+		pm.Durations,
+		pm.InFlight,
 	)
 }
 
 // Unregister cancels registration of metrics collector in Prometheus.
-func (c *HTTPRequestMetricsCollector) Unregister() {
-	prometheus.Unregister(c.InFlight)
-	prometheus.Unregister(c.Durations)
+func (pm *HTTPRequestPrometheusMetrics) Unregister() {
+	prometheus.Unregister(pm.InFlight)
+	prometheus.Unregister(pm.Durations)
 }
 
-func (c *HTTPRequestMetricsCollector) trackRequestEnd(reqInfo *httpRequestInfo, status int, startTime time.Time) {
-	labels := reqInfo.makeLabels()
-	labels[httpRequestMetricsLabelStatusCode] = strconv.Itoa(status)
-	c.Durations.With(labels).Observe(time.Since(startTime).Seconds())
+// IncInFlightRequests increments the counter of in-flight requests.
+func (pm *HTTPRequestPrometheusMetrics) IncInFlightRequests(requestInfo HTTPRequestInfoMetrics) {
+	pm.InFlight.With(prometheus.Labels{
+		httpRequestMetricsLabelMethod:        requestInfo.Method,
+		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
+		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
+	}).Inc()
 }
 
-type httpRequestInfo struct {
-	method        string
-	routePattern  string
-	userAgentType string
+// DecInFlightRequests decrements the counter of in-flight requests.
+func (pm *HTTPRequestPrometheusMetrics) DecInFlightRequests(requestInfo HTTPRequestInfoMetrics) {
+	pm.InFlight.With(prometheus.Labels{
+		httpRequestMetricsLabelMethod:        requestInfo.Method,
+		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
+		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
+	}).Dec()
 }
 
-func (hri *httpRequestInfo) makeLabels() prometheus.Labels {
-	return prometheus.Labels{
-		httpRequestMetricsLabelMethod:        hri.method,
-		httpRequestMetricsLabelRoutePattern:  hri.routePattern,
-		httpRequestMetricsLabelUserAgentType: hri.userAgentType,
-	}
+// ObserveRequestFinish observes the duration of the request and the status code.
+func (pm *HTTPRequestPrometheusMetrics) ObserveRequestFinish(
+	requestInfo HTTPRequestInfoMetrics, status int, startTime time.Time,
+) {
+	pm.Durations.With(prometheus.Labels{
+		httpRequestMetricsLabelMethod:        requestInfo.Method,
+		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
+		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
+		httpRequestMetricsLabelStatusCode:    strconv.Itoa(status),
+	}).Observe(time.Since(startTime).Seconds())
 }
 
 // UserAgentTypeGetterFunc is a function for getting user agent type from the request.
@@ -161,21 +190,21 @@ type HTTPRequestMetricsOpts struct {
 
 type httpRequestMetricsHandler struct {
 	next            http.Handler
-	collector       *HTTPRequestMetricsCollector
+	collector       HTTPRequestMetricsCollector
 	getRoutePattern RoutePatternGetterFunc
 	opts            HTTPRequestMetricsOpts
 }
 
 // HTTPRequestMetrics is a middleware that collects metrics for incoming HTTP requests using Prometheus data types.
 func HTTPRequestMetrics(
-	collector *HTTPRequestMetricsCollector, getRoutePattern RoutePatternGetterFunc,
+	collector HTTPRequestMetricsCollector, getRoutePattern RoutePatternGetterFunc,
 ) func(next http.Handler) http.Handler {
 	return HTTPRequestMetricsWithOpts(collector, getRoutePattern, HTTPRequestMetricsOpts{})
 }
 
 // HTTPRequestMetricsWithOpts is a more configurable version of HTTPRequestMetrics middleware.
 func HTTPRequestMetricsWithOpts(
-	collector *HTTPRequestMetricsCollector,
+	collector HTTPRequestMetricsCollector,
 	getRoutePattern RoutePatternGetterFunc,
 	opts HTTPRequestMetricsOpts,
 ) func(next http.Handler) http.Handler {
@@ -204,15 +233,14 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 		r = r.WithContext(NewContextWithRequestStartTime(r.Context(), startTime))
 	}
 
-	reqInfo := &httpRequestInfo{
-		method:        r.Method,
-		routePattern:  h.getRoutePattern(r),
-		userAgentType: h.opts.GetUserAgentType(r),
+	reqInfo := HTTPRequestInfoMetrics{
+		Method:        r.Method,
+		RoutePattern:  h.getRoutePattern(r),
+		UserAgentType: h.opts.GetUserAgentType(r),
 	}
 
-	inFlightGauge := h.collector.InFlight.With(reqInfo.makeLabels())
-	inFlightGauge.Inc()
-	defer inFlightGauge.Dec()
+	h.collector.IncInFlightRequests(reqInfo)
+	defer h.collector.DecInFlightRequests(reqInfo)
 
 	r = r.WithContext(NewContextWithHTTPMetricsEnabled(r.Context()))
 
@@ -222,16 +250,16 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 			return
 		}
 
-		if reqInfo.routePattern == "" {
-			reqInfo.routePattern = h.getRoutePattern(r)
+		if reqInfo.RoutePattern == "" {
+			reqInfo.RoutePattern = h.getRoutePattern(r)
 		}
 		if p := recover(); p != nil {
 			if p != http.ErrAbortHandler {
-				h.collector.trackRequestEnd(reqInfo, http.StatusInternalServerError, startTime)
+				h.collector.ObserveRequestFinish(reqInfo, http.StatusInternalServerError, startTime)
 			}
 			panic(p)
 		}
-		h.collector.trackRequestEnd(reqInfo, wrw.Status(), startTime)
+		h.collector.ObserveRequestFinish(reqInfo, wrw.Status(), startTime)
 	}()
 
 	h.next.ServeHTTP(wrw, r)
