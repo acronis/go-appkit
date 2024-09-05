@@ -12,175 +12,157 @@ import (
 	"sync"
 )
 
-// EntryType is a type of storing in cache entries.
-type EntryType int
-
-// EntryTypeDefault is a default entry type.
-const EntryTypeDefault EntryType = 0
-
-type cacheKey[K comparable] struct {
-	key       K
-	entryType EntryType
-}
-
-type cacheEntry[K comparable] struct {
-	key   cacheKey[K]
-	value interface{}
+type cacheEntry[K comparable, V any] struct {
+	key   K
+	value V
 }
 
 // LRUCache represents an LRU cache with eviction mechanism and Prometheus metrics.
-type LRUCache[K comparable] struct {
+type LRUCache[K comparable, V any] struct {
 	maxEntries int
 
 	mu      sync.RWMutex
 	lruList *list.List
-	cache   map[cacheKey[K]]*list.Element // map of cache entries, value is a lruList element
+	cache   map[K]*list.Element // map of cache entries, value is a lruList element
 
-	MetricsCollector *MetricsCollector
+	metricsCollector MetricsCollector
 }
 
 // New creates a new LRUCache with the provided maximum number of entries.
-func New[K comparable](maxEntries int, metricsCollector *MetricsCollector) (*LRUCache[K], error) {
+func New[K comparable, V any](maxEntries int, metricsCollector MetricsCollector) (*LRUCache[K, V], error) {
 	if maxEntries <= 0 {
 		return nil, fmt.Errorf("maxEntries must be greater than 0")
 	}
-	return &LRUCache[K]{
+	if metricsCollector == nil {
+		metricsCollector = disabledMetrics{}
+	}
+	return &LRUCache[K, V]{
 		maxEntries:       maxEntries,
 		lruList:          list.New(),
-		cache:            make(map[cacheKey[K]]*list.Element),
-		MetricsCollector: metricsCollector,
+		cache:            make(map[K]*list.Element),
+		metricsCollector: metricsCollector,
 	}, nil
 }
 
 // Get returns a value from the cache by the provided key and type.
-func (c *LRUCache[K]) Get(key K, entryType EntryType) (value interface{}, ok bool) {
-	metrics := c.MetricsCollector.getEntryTypeMetrics(entryType)
-
-	defer func() {
-		if ok {
-			metrics.HitsTotal.Inc()
-		} else {
-			metrics.MissesTotal.Inc()
-		}
-	}()
-
-	cKey := cacheKey[K]{key, entryType}
-
+func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	if elem, hit := c.cache[cKey]; hit {
-		c.lruList.MoveToFront(elem)
-		return elem.Value.(*cacheEntry[K]).value, true
-	}
-	return nil, false
+	return c.get(key)
 }
 
 // Add adds a value to the cache with the provided key and type.
 // If the cache is full, the oldest entry will be removed.
-func (c *LRUCache[K]) Add(key K, value interface{}, entryType EntryType) {
-	var evictedEntry *cacheEntry[K]
-
-	defer func() {
-		if evictedEntry != nil {
-			c.MetricsCollector.getEntryTypeMetrics(evictedEntry.key.entryType).EvictionsTotal.Inc()
-		}
-	}()
-
-	cKey := cacheKey[K]{key, entryType}
-	entry := &cacheEntry[K]{key: cKey, value: value}
-
+func (c *LRUCache[K, V]) Add(key K, value V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if elem, ok := c.cache[cKey]; ok {
+	if elem, ok := c.cache[key]; ok {
 		c.lruList.MoveToFront(elem)
-		elem.Value = entry
+		elem.Value = &cacheEntry[K, V]{key: key, value: value}
 		return
 	}
+	c.addNew(key, value)
+}
 
-	c.cache[cKey] = c.lruList.PushFront(entry)
-	c.MetricsCollector.getEntryTypeMetrics(cKey.entryType).Amount.Inc()
-	if len(c.cache) <= c.maxEntries {
-		return
+func (c *LRUCache[K, V]) GetOrAdd(key K, valueProvider func() V) (value V, exists bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if value, exists = c.get(key); exists {
+		return value, exists
 	}
-	if evictedEntry = c.removeOldest(); evictedEntry != nil {
-		c.MetricsCollector.getEntryTypeMetrics(evictedEntry.key.entryType).Amount.Dec()
-	}
+	value = valueProvider()
+	c.addNew(key, value)
+	return value, false
 }
 
 // Remove removes a value from the cache by the provided key and type.
-func (c *LRUCache[K]) Remove(key K, entryType EntryType) bool {
-	cKey := cacheKey[K]{key, entryType}
-
+func (c *LRUCache[K, V]) Remove(key K) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	elem, ok := c.cache[cKey]
+	elem, ok := c.cache[key]
 	if !ok {
 		return false
 	}
 
 	c.lruList.Remove(elem)
-	delete(c.cache, cKey)
-	c.MetricsCollector.getEntryTypeMetrics(entryType).Amount.Dec()
+	delete(c.cache, key)
+	c.metricsCollector.SetAmount(len(c.cache))
 	return true
 }
 
 // Purge clears the cache.
-func (c *LRUCache[K]) Purge() {
+// Keep in mind that this method does not reset the cache size
+// and does not reset Prometheus metrics except for the total number of entries.
+// All removed entries will not be counted as evictions.
+func (c *LRUCache[K, V]) Purge() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	for _, etMetrics := range c.MetricsCollector.entryTypeMetrics {
-		etMetrics.Amount.Set(0)
-	}
-	c.cache = make(map[cacheKey[K]]*list.Element)
+	c.metricsCollector.SetAmount(0)
+	c.cache = make(map[K]*list.Element)
 	c.lruList.Init()
 }
 
-// Resize changes the cache size.
-// Note that resizing the cache may cause some entries to be evicted.
-func (c *LRUCache[K]) Resize(size int) {
+// Resize changes the cache size and returns the number of evicted entries.
+func (c *LRUCache[K, V]) Resize(size int) (evicted int) {
 	if size <= 0 {
-		return
+		return 0
 	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.maxEntries = size
-	diff := len(c.cache) - size
-	if diff <= 0 {
+	evicted = len(c.cache) - size
+	if evicted <= 0 {
 		return
 	}
-
-	rmCounts := make([]int, len(c.MetricsCollector.entryTypeMetrics))
-	for i := 0; i < diff; i++ {
-		if rmEntry := c.removeOldest(); rmEntry != nil {
-			rmCounts[rmEntry.key.entryType]++
-		}
+	for i := 0; i < evicted; i++ {
+		_ = c.removeOldest()
 	}
-	for et, cnt := range rmCounts {
-		typeMetrics := c.MetricsCollector.getEntryTypeMetrics(EntryType(et))
-		typeMetrics.Amount.Sub(float64(cnt))
-		typeMetrics.EvictionsTotal.Add(float64(cnt))
-	}
+	c.metricsCollector.SetAmount(len(c.cache))
+	c.metricsCollector.AddEvictions(evicted)
+	return evicted
 }
 
 // Len returns the number of items in the cache.
-func (c *LRUCache[K]) Len() int {
+func (c *LRUCache[K, V]) Len() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.cache)
 }
 
-func (c *LRUCache[K]) removeOldest() *cacheEntry[K] {
+func (c *LRUCache[K, V]) get(key K) (value V, ok bool) {
+	if elem, hit := c.cache[key]; hit {
+		c.lruList.MoveToFront(elem)
+		c.metricsCollector.IncHits()
+		return elem.Value.(*cacheEntry[K, V]).value, true
+	}
+	c.metricsCollector.IncMisses()
+	return value, false
+}
+
+func (c *LRUCache[K, V]) addNew(key K, value V) {
+	c.cache[key] = c.lruList.PushFront(&cacheEntry[K, V]{key: key, value: value})
+	if len(c.cache) <= c.maxEntries {
+		c.metricsCollector.SetAmount(len(c.cache))
+		return
+	}
+	if evictedEntry := c.removeOldest(); evictedEntry != nil {
+		c.metricsCollector.AddEvictions(1)
+	}
+}
+
+func (c *LRUCache[K, V]) removeOldest() *cacheEntry[K, V] {
 	elem := c.lruList.Back()
 	if elem == nil {
 		return nil
 	}
 	c.lruList.Remove(elem)
-	entry := elem.Value.(*cacheEntry[K])
+	entry := elem.Value.(*cacheEntry[K, V])
 	delete(c.cache, entry.key)
 	return entry
 }

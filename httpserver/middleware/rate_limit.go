@@ -12,15 +12,14 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/RussellLuo/slidingwindow"
-	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/memstore"
 
 	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/lrucache"
 	"github.com/acronis/go-appkit/restapi"
 )
 
@@ -355,19 +354,14 @@ func makeRateLimitBacklogSlotsProvider(backlogLimit, maxKeys int) (func(key stri
 		}, nil
 	}
 
-	keysZone, err := simplelru.NewLRU(maxKeys, nil)
+	keysZone, err := lrucache.New[string, chan struct{}](maxKeys, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
 	}
-	var mu sync.Mutex
 	return func(key string) chan struct{} {
-		mu.Lock()
-		defer mu.Unlock()
-		if val, ok := keysZone.Get(key); ok {
-			return val.(chan struct{})
-		}
-		backlogSlots := make(chan struct{}, backlogLimit)
-		keysZone.Add(key, backlogSlots)
+		backlogSlots, _ := keysZone.GetOrAdd(key, func() chan struct{} {
+			return make(chan struct{}, backlogLimit)
+		})
 		return backlogSlots
 	}, nil
 }
@@ -423,24 +417,20 @@ func newSlidingWindowLimiter(maxRate Rate, maxKeys int) (*slidingWindowLimiter, 
 		}, nil
 	}
 
-	store, err := simplelru.NewLRU(maxKeys, nil)
+	store, err := lrucache.New[string, *slidingwindow.Limiter](maxKeys, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
 	}
-	var mu sync.Mutex
 	return &slidingWindowLimiter{
 		maxRate: maxRate,
 		getLimiter: func(key string) *slidingwindow.Limiter {
-			mu.Lock()
-			defer mu.Unlock()
-			if val, ok := store.Get(key); ok {
-				return val.(*slidingwindow.Limiter)
-			}
-			lim, _ := slidingwindow.NewLimiter(
-				maxRate.Duration, int64(maxRate.Count), func() (slidingwindow.Window, slidingwindow.StopFunc) {
-					return slidingwindow.NewLocalWindow()
-				})
-			store.Add(key, lim)
+			lim, _ := store.GetOrAdd(key, func() *slidingwindow.Limiter {
+				lim, _ := slidingwindow.NewLimiter(
+					maxRate.Duration, int64(maxRate.Count), func() (slidingwindow.Window, slidingwindow.StopFunc) {
+						return slidingwindow.NewLocalWindow()
+					})
+				return lim
+			})
 			return lim
 		},
 	}, nil

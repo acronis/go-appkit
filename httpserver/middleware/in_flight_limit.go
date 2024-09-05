@@ -11,12 +11,10 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
-	"github.com/hashicorp/golang-lru/simplelru"
-
 	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/lrucache"
 	"github.com/acronis/go-appkit/restapi"
 )
 
@@ -292,24 +290,17 @@ func makeInFlightLimitSlotsProvider(limit, backlogLimit, maxKeys int) (func(key 
 		backlogSlots chan struct{}
 	}
 
-	keysZone, err := simplelru.NewLRU(maxKeys, nil)
+	keysZone, err := lrucache.New[string, KeysZoneItem](maxKeys, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
 	}
-	var keysZoneMu sync.Mutex
 	return func(key string) (chan struct{}, chan struct{}) {
-		keysZoneMu.Lock()
-		defer keysZoneMu.Unlock()
-		var keysZoneItem KeysZoneItem
-		if val, ok := keysZone.Get(key); ok {
-			keysZoneItem = val.(KeysZoneItem)
-		} else {
-			keysZoneItem = KeysZoneItem{
+		keysZoneItem, _ := keysZone.GetOrAdd(key, func() KeysZoneItem {
+			return KeysZoneItem{
 				slots:        make(chan struct{}, limit),
 				backlogSlots: make(chan struct{}, limit+backlogLimit),
 			}
-			keysZone.Add(key, keysZoneItem)
-		}
+		})
 		return keysZoneItem.slots, keysZoneItem.backlogSlots
 	}, nil
 }

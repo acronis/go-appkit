@@ -39,7 +39,7 @@ func RespondJSON(rw http.ResponseWriter, respData interface{}, logger log.FieldL
 	RespondCodeAndJSON(rw, http.StatusOK, respData, logger)
 }
 
-// RespondCodeAndJSON  sends a response with the passed status code and sets the "Content-Type"
+// RespondCodeAndJSON sends a response with the passed status code and sets the "Content-Type"
 // to "application/json" if it's not already set. It performs JSON marshaling of the data and
 // writes the result to the response's body.
 func RespondCodeAndJSON(rw http.ResponseWriter, statusCode int, respData interface{}, logger log.FieldLogger) {
@@ -131,7 +131,7 @@ func RespondMalformedRequestOrInternalError(rw http.ResponseWriter, domain strin
 func logAndCollectMetricsForErrorIfNeeded(err *Error, logger log.FieldLogger) {
 	if logger != nil {
 		flds := []log.Field{log.String("error_code", err.Code), log.String("error_message", err.Message)}
-		if err.Context != nil {
+		if len(err.Context) != 0 {
 			ctxLines := make([]string, 0, len(err.Context))
 			for k, v := range err.Context {
 				ctxLines = append(ctxLines, fmt.Sprintf("%s: %v", k, v))
