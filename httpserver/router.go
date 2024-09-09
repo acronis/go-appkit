@@ -116,12 +116,11 @@ func applyDefaultMiddlewaresToRouter(
 		})
 	router.Use(metricsMiddleware)
 
-	// To limit the number of currently serving requests, we use Throttle middleware from chi.
-	if cfg.Limits.MaxRequests < 0 {
-		return ErrInvalidMaxServingRequests
-	}
-	if cfg.Limits.MaxRequests > 0 {
-		inFlightLimitMw := middleware.InFlightLimit(cfg.Limits.MaxRequests, opts.ErrorDomain)
+	if cfg.Limits.MaxRequests != 0 {
+		inFlightLimitMw, err := middleware.InFlightLimit(cfg.Limits.MaxRequests, opts.ErrorDomain)
+		if err != nil {
+			return fmt.Errorf("create in-flight limit middleware: %w", err)
+		}
 		router.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 				for i := 0; i < len(systemEndpoints); i++ {

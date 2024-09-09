@@ -82,7 +82,11 @@ rules:
 
 	const longWorkDelay = time.Second
 
-	srv := makeExampleTestServer(cfg, longWorkDelay)
+	srv, err := makeExampleTestServer(cfg, longWorkDelay)
+	if err != nil {
+		stdlog.Fatal(err)
+		return
+	}
 	defer srv.Close()
 
 	// Rate limiting.
@@ -156,17 +160,20 @@ rules:
 	// [9] PUT /api/2/tenants/446507ba-2f9b-4347-adbc-63581383ba25 204
 }
 
-func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) *httptest.Server {
+func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) (*httptest.Server, error) {
 	promMetrics := throttle.NewPrometheusMetrics()
 	promMetrics.MustRegister()
 	defer promMetrics.Unregister()
 
 	// Configure middleware that should do global throttling ("all_reqs" tag says about that).
-	allReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
+	globalThrottleMiddleware, err := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
 		Tags: []string{"all_reqs"}})
+	if err != nil {
+		return nil, fmt.Errorf("create global throttling middleware: %w", err)
+	}
 
 	// Configure middleware that should do per-client throttling based on the username from basic auth ("authenticated_reqs" tag says about that).
-	authenticatedReqsThrottleMiddleware := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
+	clientThrottleMiddleware, err := throttle.MiddlewareWithOpts(cfg, apiErrDomain, promMetrics, throttle.MiddlewareOpts{
 		Tags: []string{"authenticated_reqs"},
 		GetKeyIdentity: func(r *http.Request) (key string, bypass bool, err error) {
 			username, _, ok := r.BasicAuth()
@@ -176,9 +183,12 @@ func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) *h
 			return username, false, nil
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("create client throttling middleware: %w", err)
+	}
 
 	restoreTenantPathRegExp := regexp.MustCompile(`^/api/2/tenants/([\w-]{36})/?$`)
-	return httptest.NewServer(allReqsThrottleMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(globalThrottleMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/long-work":
 			if r.Method != http.MethodPost {
@@ -213,12 +223,12 @@ func makeExampleTestServer(cfg *throttle.Config, longWorkDelay time.Duration) *h
 				rw.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			authenticatedReqsThrottleMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			clientThrottleMiddleware(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 				rw.WriteHeader(http.StatusNoContent)
 			})).ServeHTTP(rw, r)
 			return
 		}
 
 		rw.WriteHeader(http.StatusNotFound)
-	})))
+	}))), nil
 }

@@ -90,19 +90,28 @@ type InFlightLimitOpts struct {
 
 // InFlightLimit is a middleware that limits the total number of currently served (in-flight) HTTP requests.
 // It checks how many requests are in-flight and rejects with 503 if exceeded.
-func InFlightLimit(limit int, errDomain string) func(next http.Handler) http.Handler {
+func InFlightLimit(limit int, errDomain string) (func(next http.Handler) http.Handler, error) {
 	return InFlightLimitWithOpts(limit, errDomain, InFlightLimitOpts{})
 }
 
+// MustInFlightLimit is a version of InFlightLimit that panics on error.
+func MustInFlightLimit(limit int, errDomain string) func(next http.Handler) http.Handler {
+	mw, err := InFlightLimit(limit, errDomain)
+	if err != nil {
+		panic(err)
+	}
+	return mw
+}
+
 // InFlightLimitWithOpts is a configurable version of a middleware to limit in-flight HTTP requests.
-func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) func(next http.Handler) http.Handler {
+func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) (func(next http.Handler) http.Handler, error) {
 	if limit <= 0 {
-		panic(fmt.Errorf("limit should be positive, got %d", limit))
+		return nil, fmt.Errorf("limit should be positive, got %d", limit)
 	}
 
 	backlogLimit := opts.BacklogLimit
 	if backlogLimit < 0 {
-		panic(fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit))
+		return nil, fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit)
 	}
 
 	backlogTimeout := opts.BacklogTimeout
@@ -120,7 +129,7 @@ func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) 
 
 	getSlots, err := makeInFlightLimitSlotsProvider(limit, backlogLimit, maxKeys)
 	if err != nil {
-		panic(fmt.Errorf("make in-flight limit slots provider: %w", err))
+		return nil, fmt.Errorf("make in-flight limit slots provider: %w", err)
 	}
 
 	respStatusCode := opts.ResponseStatusCode
@@ -141,7 +150,16 @@ func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) 
 			onReject:       makeInFlightLimitOnRejectFunc(opts),
 			onError:        makeInFlightLimitOnErrorFunc(opts),
 		}
+	}, nil
+}
+
+// MustInFlightLimitWithOpts is a version of InFlightLimitWithOpts that panics on error.
+func MustInFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) func(next http.Handler) http.Handler {
+	mw, err := InFlightLimitWithOpts(limit, errDomain, opts)
+	if err != nil {
+		panic(err)
 	}
+	return mw
 }
 
 func (h *inFlightLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {

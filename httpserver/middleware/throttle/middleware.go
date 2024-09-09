@@ -79,34 +79,39 @@ func (opts MiddlewareOpts) inFlightLimitOpts() inFlightLimitMiddlewareOpts {
 }
 
 // Middleware is a middleware that throttles incoming HTTP requests based on the passed configuration.
-func Middleware(cfg *Config, errDomain string, mc MetricsCollector) func(next http.Handler) http.Handler {
+func Middleware(cfg *Config, errDomain string, mc MetricsCollector) (func(next http.Handler) http.Handler, error) {
 	return MiddlewareWithOpts(cfg, errDomain, mc, MiddlewareOpts{})
 }
 
 // MiddlewareWithOpts is a more configurable version of Middleware.
-func MiddlewareWithOpts(cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts) func(next http.Handler) http.Handler {
+func MiddlewareWithOpts(
+	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts,
+) (func(next http.Handler) http.Handler, error) {
 	if mc == nil {
 		mc = disabledMetrics{}
 	}
 
-	mustMakeRoutesManager := func(next http.Handler) *restapi.RoutesManager {
-		routes, err := makeRoutes(cfg, errDomain, mc, opts, next)
-		if err != nil {
-			panic(err) // Should be validated above.
-		}
-		return restapi.NewRoutesManager(routes)
+	routes, err := makeRoutes(cfg, errDomain, mc, opts)
+	if err != nil {
+		return nil, err
 	}
 
 	if opts.BuildHandlerAtInit {
 		return func(next http.Handler) http.Handler {
-			return &handler{next: next, routesManager: mustMakeRoutesManager(next)}
-		}
+			for i := range routes {
+				route := &routes[i]
+				route.Handler = next
+				for j := len(route.Middlewares) - 1; j >= 0; j-- {
+					route.Handler = route.Middlewares[j](route.Handler)
+				}
+			}
+			return &handler{next: next, routesManager: restapi.NewRoutesManager(routes)}
+		}, nil
 	}
 
-	routesManager := mustMakeRoutesManager(nil)
 	return func(next http.Handler) http.Handler {
-		return &handler{next: next, routesManager: routesManager}
-	}
+		return &handler{next: next, routesManager: restapi.NewRoutesManager(routes)}
+	}, nil
 }
 
 type handler struct {
@@ -138,7 +143,7 @@ func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 // nolint: gocyclo // we would like to have high functional cohesion here.
 func makeRoutes(
-	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts, handler http.Handler,
+	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts,
 ) (routes []restapi.Route, err error) {
 	for _, rule := range cfg.Rules {
 		if len(rule.RateLimits) == 0 && len(rule.InFlightLimits) == 0 {
@@ -162,7 +167,7 @@ func makeRoutes(
 			inFlightLimitMw, err = makeInFlightLimitMiddleware(
 				&cfgZone, errDomain, rule.Name(), mc, opts.inFlightLimitOpts())
 			if err != nil {
-				return nil, fmt.Errorf("new in-flight limit middleware for zone %q: %w", zoneName, err)
+				return nil, fmt.Errorf("make in-flight limit middleware for zone %q: %w", zoneName, err)
 			}
 			middlewares = append(middlewares, inFlightLimitMw)
 		}
@@ -178,20 +183,13 @@ func makeRoutes(
 			rateLimitMw, err = makeRateLimitMiddleware(
 				&cfgZone, errDomain, rule.Name(), mc, opts.rateLimitOpts())
 			if err != nil {
-				return nil, fmt.Errorf("new rate limit middleware for zone %q: %w", zoneName, err)
+				return nil, fmt.Errorf("make rate limit middleware for zone %q: %w", zoneName, err)
 			}
 			middlewares = append(middlewares, rateLimitMw)
 		}
 
-		routeHandler := handler
-		if routeHandler != nil {
-			for i := len(middlewares) - 1; i >= 0; i-- {
-				routeHandler = middlewares[i](routeHandler)
-			}
-		}
-
 		for _, cfgRoute := range rule.Routes {
-			routes = append(routes, restapi.NewRoute(cfgRoute, routeHandler, middlewares))
+			routes = append(routes, restapi.NewRoute(cfgRoute, nil, middlewares))
 		}
 		for _, exclCfgRoute := range rule.ExcludedRoutes {
 			routes = append(routes, restapi.NewExcludedRoute(exclCfgRoute))
@@ -298,7 +296,7 @@ func makeRateLimitMiddleware(
 		OnReject:           onRejectWithMetrics,
 		OnRejectInDryRun:   onRejectInDryRunWithMetrics,
 		OnError:            opts.RateLimitOnError,
-	}), nil
+	})
 }
 
 type inFlightLimitMiddlewareOpts struct {
@@ -379,7 +377,7 @@ func makeInFlightLimitMiddleware(
 		OnReject:           onRejectWithMetrics,
 		OnRejectInDryRun:   onRejectInDryRunWithMetrics,
 		OnError:            opts.InFlightLimitOnError,
-	}), nil
+	})
 }
 
 // nolint: gocyclo // we would like to have high functional cohesion here.

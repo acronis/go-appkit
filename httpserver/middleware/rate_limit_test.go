@@ -64,7 +64,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 
 	t.Run("leaky bucket, maxRate=1r/s, maxBurst=0, no key", func(t *testing.T) {
 		next, nextServedCount := makeNext()
-		handler := RateLimit(Rate{1, time.Second}, errDomain)(next)
+		handler := MustRateLimit(Rate{1, time.Second}, errDomain)(next)
 		_ = sendReqAndCheckCode(t, handler, http.StatusOK, nil)
 		retryAfter := sendReqAndCheckCode(t, handler, http.StatusServiceUnavailable, nil)
 		time.Sleep(retryAfter)
@@ -84,7 +84,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 		wantRetryAfter := time.Second * time.Duration(math.Ceil(emissionInterval.Seconds()))
 
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(rate, errDomain, RateLimitOpts{MaxBurst: maxBurst, GetRetryAfter: GetRetryAfterEstimatedTime})(next)
+		handler := MustRateLimitWithOpts(rate, errDomain, RateLimitOpts{MaxBurst: maxBurst, GetRetryAfter: GetRetryAfterEstimatedTime})(next)
 
 		sendNReqsConcurrentlyAndCheck := func(n int) {
 			var okCount, tooManyReqsCount, unexpectedCodeReqsCount, wrongRetryAfterReqsCount, getRetryAfterErrsCount atomic.Int32
@@ -140,7 +140,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 	t.Run("leaky bucket, maxRate=1r/s, maxBurst=0, by key", func(t *testing.T) {
 		const headerClientID = "X-Client-ID"
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
 			GetKey:             makeRateLimitGetKeyByHeader(headerClientID),
 			GetRetryAfter:      GetRetryAfterEstimatedTime,
 			ResponseStatusCode: http.StatusTooManyRequests,
@@ -167,7 +167,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 	t.Run("leaky bucket, maxRate=1r/s, maxBurst=0, by key, no bypass empty key", func(t *testing.T) {
 		const headerClientID = "X-Client-ID"
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
 			GetKey: func(r *http.Request) (key string, bypass bool, err error) {
 				return r.Header.Get(headerClientID), false, nil
 			},
@@ -204,7 +204,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 		wantRetryAfter := time.Second * time.Duration(math.Ceil(emissionInterval.Seconds()))
 
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(rate, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(rate, errDomain, RateLimitOpts{
 			MaxBurst:           maxBurst,
 			GetKey:             makeRateLimitGetKeyByHeader(headerClientID),
 			GetRetryAfter:      GetRetryAfterEstimatedTime,
@@ -311,7 +311,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 
 	t.Run("sliding window, maxRate=1r/s, no key", func(t *testing.T) {
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
 			Alg:           RateLimitAlgSlidingWindow,
 			GetRetryAfter: GetRetryAfterEstimatedTime,
 		})(next)
@@ -330,7 +330,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 		rate := Rate{2, time.Second}
 
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(rate, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(rate, errDomain, RateLimitOpts{
 			Alg:                RateLimitAlgSlidingWindow,
 			GetKey:             makeRateLimitGetKeyByHeader(headerClientID),
 			GetRetryAfter:      GetRetryAfterEstimatedTime,
@@ -387,7 +387,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 
 	t.Run("RetryAfter custom", func(t *testing.T) {
 		next, _ := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
 			GetRetryAfter: func(r *http.Request, estimatedTime time.Duration) time.Duration {
 				return estimatedTime * 3
 			},
@@ -399,7 +399,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 
 	t.Run("leaky bucket, maxRate=1r/s, maxBurst=0, backlogLimit=1, no key", func(t *testing.T) {
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{BacklogLimit: 1})(next)
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{BacklogLimit: 1})(next)
 		sendReqAndCheckCode(t, handler, http.StatusOK, nil)
 		startTime := time.Now()
 		sendReqAndCheckCode(t, handler, http.StatusOK, nil)
@@ -425,7 +425,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 	t.Run("leaky bucket, maxRate=1r/m, maxBurst=0, backlogLimit=1, backlogTimeout=1s, no key", func(t *testing.T) {
 		next, nextServedCount := makeNext()
 		rateLimitOpts := RateLimitOpts{BacklogLimit: 1, BacklogTimeout: time.Second, GetRetryAfter: GetRetryAfterEstimatedTime}
-		handler := RateLimitWithOpts(Rate{1, time.Minute}, errDomain, rateLimitOpts)(next)
+		handler := MustRateLimitWithOpts(Rate{1, time.Minute}, errDomain, rateLimitOpts)(next)
 		sendReqAndCheckCode(t, handler, http.StatusOK, nil)
 		startTime := time.Now()
 		sendReqAndCheckCode(t, handler, http.StatusServiceUnavailable, nil)
@@ -436,7 +436,7 @@ func TestRateLimitHandler_ServeHTTP(t *testing.T) {
 	t.Run("leaky bucket, maxRate=1r/s, maxBurst=0, backlogLimit=1, by key", func(t *testing.T) {
 		const headerClientID = "X-Client-ID"
 		next, nextServedCount := makeNext()
-		handler := RateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
+		handler := MustRateLimitWithOpts(Rate{1, time.Second}, errDomain, RateLimitOpts{
 			GetKey:             makeRateLimitGetKeyByHeader(headerClientID),
 			BacklogLimit:       1,
 			GetRetryAfter:      GetRetryAfterEstimatedTime,

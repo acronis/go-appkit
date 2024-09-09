@@ -25,9 +25,6 @@ import (
 	"github.com/acronis/go-appkit/service"
 )
 
-// ErrInvalidMaxServingRequests error is returned when maximum number of currently serving requests is negative.
-var ErrInvalidMaxServingRequests = errors.New("maximum number of currently serving requests must not be negative")
-
 const (
 	networkTCP  = "tcp"
 	networkUnix = "unix"

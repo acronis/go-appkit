@@ -45,7 +45,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimit(1, errDomain)(next)
+		handler := MustInFlightLimit(1, errDomain)(next)
 
 		respCode := make(chan int)
 		go func() {
@@ -84,7 +84,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{BacklogLimit: 1, BacklogTimeout: backlogTimeout})(next)
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{BacklogLimit: 1, BacklogTimeout: backlogTimeout})(next)
 
 		resp1Code := make(chan int)
 		go func() {
@@ -139,7 +139,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			rw.WriteHeader(http.StatusOK)
 		})
 
-		handler := InFlightLimit(limit, errDomain)(next)
+		handler := MustInFlightLimit(limit, errDomain)(next)
 		var wg sync.WaitGroup
 		for i := 0; i < reqsNum; i++ {
 			wg.Add(1)
@@ -184,7 +184,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
 			GetKey:             makeInFlightLimitGetKeyByHeader(headerClientID),
 			ResponseStatusCode: http.StatusTooManyRequests,
 		})(next)
@@ -235,7 +235,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
 			GetKey: func(r *http.Request) (string, bool, error) {
 				key := r.Header.Get(headerClientID)
 				return key, key == "", nil
@@ -308,7 +308,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
 			GetKey: func(r *http.Request) (string, bool, error) {
 				return r.Header.Get(headerClientID), false, nil
 			},
@@ -358,7 +358,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			rw.WriteHeader(http.StatusOK)
 		})
 
-		handler := InFlightLimitWithOpts(limitPerClient, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(limitPerClient, errDomain, InFlightLimitOpts{
 			GetKey:             makeInFlightLimitGetKeyByHeader(headerClientID),
 			ResponseStatusCode: http.StatusTooManyRequests,
 		})(next)
@@ -417,7 +417,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			}
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{
 			GetKey:             makeInFlightLimitGetKeyByHeader(headerClientID),
 			MaxKeys:            1,
 			ResponseStatusCode: http.StatusTooManyRequests,
@@ -460,7 +460,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			rw.WriteHeader(http.StatusOK)
 		})
 
-		handler := InFlightLimitWithOpts(limit, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(limit, errDomain, InFlightLimitOpts{
 			GetKey:             makeInFlightLimitGetKeyByHeader(headerClientID),
 			MaxKeys:            1,
 			ResponseStatusCode: http.StatusTooManyRequests,
@@ -499,7 +499,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			<-reqContinued
 			rw.WriteHeader(http.StatusOK)
 		})
-		handler := InFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{GetRetryAfter: func(r *http.Request) time.Duration {
+		handler := MustInFlightLimitWithOpts(1, errDomain, InFlightLimitOpts{GetRetryAfter: func(r *http.Request) time.Duration {
 			return retryAfter
 		}})(next)
 
@@ -530,7 +530,7 @@ func TestInFlightLimitHandler_ServeHTTP(t *testing.T) {
 			rw.WriteHeader(http.StatusOK)
 		})
 
-		handler := InFlightLimitWithOpts(limit, errDomain, InFlightLimitOpts{
+		handler := MustInFlightLimitWithOpts(limit, errDomain, InFlightLimitOpts{
 			DryRun:         true,
 			BacklogLimit:   backlogLimit,
 			BacklogTimeout: time.Millisecond * 10,
