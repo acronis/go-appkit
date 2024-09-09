@@ -179,7 +179,7 @@ func NewConfig() *Config {
 }
 
 // NewConfigWithKeyPrefix creates a new instance of the Config.
-// Allows to specify key prefix which will be used for parsing configuration parameters.
+// Allows specifying key prefix which will be used for parsing configuration parameters.
 func NewConfigWithKeyPrefix(keyPrefix string) *Config {
 	return &Config{keyPrefix: keyPrefix}
 }

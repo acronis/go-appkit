@@ -591,9 +591,9 @@ func (c *testCounters) checkInFlightLimit(t *testing.T, wantRejects, wantDryRunR
 
 func makeHandlerWrappedIntoMiddleware(
 	cfg *Config, blockCh chan struct{}, tags []string, buildHandlerAtInit bool,
-) (http.Handler, *testCounters) {
+) (http.Handler, *testCounters, error) {
 	c := &testCounters{}
-	mid := MiddlewareWithOpts(cfg, testErrDomain, NewPrometheusMetrics(), MiddlewareOpts{
+	mw, err := MiddlewareWithOpts(cfg, testErrDomain, NewPrometheusMetrics(), MiddlewareOpts{
 		GetKeyIdentity: func(r *http.Request) (key string, bypass bool, err error) {
 			username, _, ok := r.BasicAuth()
 			if !ok {
@@ -642,7 +642,10 @@ func makeHandlerWrappedIntoMiddleware(
 		Tags:               tags,
 		BuildHandlerAtInit: buildHandlerAtInit,
 	})
-	return mid(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	if err != nil {
+		return nil, nil, fmt.Errorf("create throttling middleware: %w", err)
+	}
+	return mw(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		c.nextCalls.Inc()
 		if blockCh != nil {
 			if err := waitSend(blockCh, time.Second*5); err != nil {
@@ -651,7 +654,7 @@ func makeHandlerWrappedIntoMiddleware(
 			}
 		}
 		rw.WriteHeader(http.StatusOK)
-	})), c
+	})), c, nil
 }
 
 // nolint
@@ -669,7 +672,8 @@ func checkRateLimiting(
 		panic("totalReqsNum should be > burst+1")
 	}
 
-	throttleHandler, counters := makeHandlerWrappedIntoMiddleware(cfg, nil, tags, false)
+	throttleHandler, counters, err := makeHandlerWrappedIntoMiddleware(cfg, nil, tags, false)
+	require.NoError(t, err)
 
 	// First N requests SHOULD NOT BE throttled.
 	for i := 0; i < wantNotThrottledReqsNum; i++ {
@@ -708,7 +712,8 @@ func checkNoRateLimiting(t *testing.T, cfg *Config, reqsGen func() *http.Request
 func checkNoRateLimitingOrDryRun(
 	t *testing.T, cfg *Config, reqsGen func() *http.Request, reqsNum, wantDryRunRejects int, tags ...string,
 ) {
-	throttleHandler, counters := makeHandlerWrappedIntoMiddleware(cfg, nil, tags, false)
+	throttleHandler, counters, err := makeHandlerWrappedIntoMiddleware(cfg, nil, tags, false)
+	require.NoError(t, err)
 	for i := 0; i < reqsNum; i++ {
 		respRec := httptest.NewRecorder()
 		throttleHandler.ServeHTTP(respRec, reqsGen())
@@ -734,7 +739,8 @@ func checkInFlightLimiting(t *testing.T, cfg *Config, params checkInFlightLimiti
 		panic("reqsNum should be > totalLimit")
 	}
 	blockCh := make(chan struct{})
-	throttleHandler, counters := makeHandlerWrappedIntoMiddleware(cfg, blockCh, params.tags, params.buildHandlerAtInit)
+	throttleHandler, counters, err := makeHandlerWrappedIntoMiddleware(cfg, blockCh, params.tags, params.buildHandlerAtInit)
+	require.NoError(t, err)
 	var okCodes, throttledCodes, unexpectedCodes, wrongRetryAfterNums atomic.Int32
 	var wg sync.WaitGroup
 	for i := 0; i < params.reqsNum; i++ {
@@ -803,7 +809,8 @@ func checkNoInFlightLimitingOrDryRun(
 	tags ...string,
 ) {
 	blockCh := make(chan struct{})
-	throttleHandler, counters := makeHandlerWrappedIntoMiddleware(cfg, blockCh, tags, false)
+	throttleHandler, counters, err := makeHandlerWrappedIntoMiddleware(cfg, blockCh, tags, false)
+	require.NoError(t, err)
 	var okCodes, unexpectedCodes atomic.Int32
 	var wg sync.WaitGroup
 	for i := 0; i < reqsNum; i++ {

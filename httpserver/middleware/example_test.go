@@ -35,7 +35,7 @@ func Example() {
 		ExcludedEndpoints: []string{"/metrics", "/healthz"}, // Metrics will not be collected for "/metrics" and "/healthz" endpoints.
 	}))
 
-	userCreateInFlightLimitMiddleware := InFlightLimitWithOpts(32, errDomain, InFlightLimitOpts{
+	userCreateInFlightLimitMiddleware := MustInFlightLimitWithOpts(32, errDomain, InFlightLimitOpts{
 		GetKey: func(r *http.Request) (string, bool, error) {
 			key := r.Header.Get("X-Client-ID")
 			return key, key == "", nil
@@ -49,7 +49,7 @@ func Example() {
 		BacklogTimeout: time.Second * 10,
 	})
 
-	usersListRateLimitMiddleware := RateLimit(Rate{Count: 100, Duration: time.Second}, errDomain)
+	usersListRateLimitMiddleware := MustRateLimit(Rate{Count: 100, Duration: time.Second}, errDomain)
 
 	router.Route("/users", func(r chi.Router) {
 		r.With(usersListRateLimitMiddleware).Get("/", func(rw http.ResponseWriter, req *http.Request) {

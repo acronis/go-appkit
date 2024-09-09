@@ -109,15 +109,24 @@ type Rate struct {
 }
 
 // RateLimit is a middleware that limits the rate of HTTP requests.
-func RateLimit(maxRate Rate, errDomain string) func(next http.Handler) http.Handler {
+func RateLimit(maxRate Rate, errDomain string) (func(next http.Handler) http.Handler, error) {
 	return RateLimitWithOpts(maxRate, errDomain, RateLimitOpts{GetRetryAfter: GetRetryAfterEstimatedTime})
 }
 
+// MustRateLimit is a version of RateLimit that panics if an error occurs.
+func MustRateLimit(maxRate Rate, errDomain string) func(next http.Handler) http.Handler {
+	mw, err := RateLimit(maxRate, errDomain)
+	if err != nil {
+		panic(err)
+	}
+	return mw
+}
+
 // RateLimitWithOpts is a configurable version of a middleware to limit the rate of HTTP requests.
-func RateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) func(next http.Handler) http.Handler {
+func RateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) (func(next http.Handler) http.Handler, error) {
 	backlogLimit := opts.BacklogLimit
 	if backlogLimit < 0 {
-		panic(fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit))
+		return nil, fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit)
 	}
 	if opts.DryRun {
 		backlogLimit = 0
@@ -148,12 +157,12 @@ func RateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) func(
 	}
 	limiter, err := makeLimiter()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	getBacklogSlots, err := makeRateLimitBacklogSlotsProvider(backlogLimit, maxKeys)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("make rate limit backlog slots provider: %w", err)
 	}
 
 	backlogTimeout := opts.BacklogTimeout
@@ -174,7 +183,16 @@ func RateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) func(
 			onReject:        makeRateLimitOnRejectFunc(opts),
 			onError:         makeRateLimitOnErrorFunc(opts),
 		}
+	}, nil
+}
+
+// MustRateLimitWithOpts is a version of RateLimitWithOpts that panics if an error occurs.
+func MustRateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) func(next http.Handler) http.Handler {
+	mw, err := RateLimitWithOpts(maxRate, errDomain, opts)
+	if err != nil {
+		panic(err)
 	}
+	return mw
 }
 
 //nolint:funlen,gocyclo
