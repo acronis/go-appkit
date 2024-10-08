@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   test_and_lint:
-    name: Test, Lint, and Coverage
+    name: Test
     strategy:
       matrix:
         go: [ '1.20' ]
@@ -37,11 +37,14 @@ jobs:
       - name: Run tests with coverage
         run: go test -race -cover -coverprofile="coverage.out" -covermode=atomic -v ./...
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage.out
-
-      - name: Calculate coverage
-        run: go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}'
-        id: coverage
+      - name: Check coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          real_coverage=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          min_coverage=$(cat min-coverage.txt)
+          if (( $(echo "$real_coverage < $min_coverage" | bc -l) )); then
+            echo "Coverage check failed: $real_coverage% is lower than the required $min_coverage%"
+            exit 1
+          else
+            echo "Coverage check passed: $real_coverage% meets the minimum requirement of $min_coverage%"
+          fi
