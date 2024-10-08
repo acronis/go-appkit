@@ -10,6 +10,7 @@ permissions:
   contents: read
 jobs:
   lint:
+    name: Lint
     strategy:
       matrix:
         go: [ '1.20' ]
