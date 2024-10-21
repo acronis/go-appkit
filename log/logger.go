@@ -137,7 +137,16 @@ func NewLogger(cfg *Config) (FieldLogger, CloseFunc) {
 		// to receive log line not in this file
 		logfLogger = logfLogger.WithCaller().WithCallerSkip(1)
 	}
-	return &LogfAdapter{logfLogger}, CloseFunc(closeFunc)
+	var logger FieldLogger = &LogfAdapter{logfLogger}
+
+	if cfg.Masking.Enabled {
+		rules := cfg.Masking.Rules
+		if cfg.Masking.UseDefaultRules {
+			rules = append(rules, DefaultMasks...)
+		}
+		logger = NewMaskingLogger(logger, NewMasker(rules))
+	}
+	return logger, CloseFunc(closeFunc)
 }
 
 // With returns a new logger with the given additional fields.

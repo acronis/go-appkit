@@ -62,6 +62,9 @@ log:
 		require.Equal(t, 42, cfg.File.Rotation.MaxBackups)
 		require.True(t, cfg.File.Rotation.Compress)
 		require.True(t, cfg.AddCaller)
+		require.False(t, cfg.Masking.Enabled)
+		require.True(t, cfg.Masking.UseDefaultRules)
+		require.Nil(t, cfg.Masking.Rules)
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -101,4 +104,70 @@ log:
 		err = config.NewDefaultLoader("").LoadFromReader(cfgData, config.DataTypeYAML, &cfg)
 		require.EqualError(t, err, `log.file.path: cannot be empty when "file" output is used`)
 	})
+}
+
+func TestMaskingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		cfg     string
+		masking MaskingConfig
+	}{
+		{
+			name: "enable default",
+			cfg: `
+log:
+  masking:
+    enabled: true`,
+			masking: MaskingConfig{Enabled: true, UseDefaultRules: true, Rules: nil},
+		},
+		{
+			name: "default with custom rules",
+			cfg: `
+log:
+  masking:
+    enabled: true
+    useDefaultRules: true
+    rules:
+      - field: "api_key"
+        formats: ["http_header", "json", "urlencoded"]`,
+			masking: MaskingConfig{
+				Enabled: true, UseDefaultRules: true, Rules: []MaskingRuleConfig{
+					{
+						Field:   "api_key",
+						Formats: []FieldMaskFormat{FieldMaskFormatHTTPHeader, FieldMaskFormatJSON, FieldMaskFormatURLEncoded},
+					},
+				},
+			},
+		},
+		{
+			name: "ultimate",
+			cfg: `
+log:
+  masking:
+    enabled: true
+    useDefaultRules: false
+    rules:
+      - field: "api_key"
+        formats: ["http_header", "json", "urlencoded"]
+        masks:
+          - regexp: "<api_key>.+?</api_key>"
+            mask: "<api_key>***</api_key>"`,
+			masking: MaskingConfig{
+				Enabled: true, UseDefaultRules: false, Rules: []MaskingRuleConfig{
+					{
+						Field:   "api_key",
+						Formats: []FieldMaskFormat{FieldMaskFormatHTTPHeader, FieldMaskFormatJSON, FieldMaskFormatURLEncoded},
+						Masks:   []MaskConfig{{RegExp: "<api_key>.+?</api_key>", Mask: "<api_key>***</api_key>"}},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{}
+			err := config.NewDefaultLoader("").LoadFromReader(bytes.NewBuffer([]byte(tc.cfg)), config.DataTypeYAML, &cfg)
+			require.NoError(t, err)
+			require.Equal(t, tc.masking, cfg.Masking)
+		})
+	}
 }
