@@ -258,5 +258,5 @@ func TestLoggerWithMasking(t *testing.T) {
 			},
 		},
 	}
-	require.Equal(t, expectedMasks, masker.FieldMasks)
+	require.Equal(t, expectedMasks, masker.fieldMasks)
 }
