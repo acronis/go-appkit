@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/ssgreg/logf"
@@ -123,4 +124,139 @@ func TestTextFormat(t *testing.T) {
 	require.Contains(t, buf.String(), ` test `)
 	require.Contains(t, buf.String(), `error="some error"`)
 	require.Contains(t, buf.String(), fmt.Sprintf(`pid=%d`, os.Getpid()))
+}
+
+func TestLoggerWithMasking(t *testing.T) {
+	logger, closer := NewLogger(&Config{
+		Masking: MaskingConfig{
+			Enabled: true, UseDefaultRules: true, Rules: []MaskingRuleConfig{
+				{
+					Field:   "api_key",
+					Formats: []FieldMaskFormat{FieldMaskFormatHTTPHeader, FieldMaskFormatJSON, FieldMaskFormatURLEncoded},
+					Masks:   []MaskConfig{{RegExp: "<api_key>.+?</api_key>", Mask: "<api_key>***</api_key>"}},
+				},
+			},
+		},
+	})
+	defer closer()
+
+	mLogger, ok := logger.(MaskingLogger)
+	require.True(t, ok)
+
+	require.IsType(t, &LogfAdapter{}, mLogger.log)
+
+	masker, ok := mLogger.masker.(*Masker)
+	require.True(t, ok)
+
+	expectedMasks := []FieldMasker{
+		{
+			Field: "api_key",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`<api_key>.+?</api_key>`),
+					Mask:   "<api_key>***</api_key>",
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)api_key: .+?\r\n`),
+					Mask:   "api_key: ***\r\n",
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)"api_key"\s*:\s*".*?[^\\]"`),
+					Mask:   `"api_key": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)api_key\s*=\s*[^&\s]+`),
+					Mask:   "api_key=***",
+				},
+			},
+		},
+		{
+			Field: "authorization",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)Authorization: .+?\r\n`),
+					Mask:   "Authorization: ***\r\n",
+				},
+			},
+		},
+		{
+			Field: "password",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"password"\s*:\s*".*?[^\\]"`),
+					Mask:   `"password": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)password\s*=\s*[^&\s]+`),
+					Mask:   "password=***",
+				},
+			},
+		},
+		{
+			Field: "client_secret",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"client_secret"\s*:\s*".*?[^\\]"`),
+					Mask:   `"client_secret": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)client_secret\s*=\s*[^&\s]+`),
+					Mask:   "client_secret=***",
+				},
+			},
+		},
+		{
+			Field: "access_token",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"access_token"\s*:\s*".*?[^\\]"`),
+					Mask:   `"access_token": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)access_token\s*=\s*[^&\s]+`),
+					Mask:   "access_token=***",
+				},
+			},
+		},
+		{
+			Field: "refresh_token",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"refresh_token"\s*:\s*".*?[^\\]"`),
+					Mask:   `"refresh_token": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)refresh_token\s*=\s*[^&\s]+`),
+					Mask:   "refresh_token=***",
+				},
+			},
+		},
+		{
+			Field: "id_token",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"id_token"\s*:\s*".*?[^\\]"`),
+					Mask:   `"id_token": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)id_token\s*=\s*[^&\s]+`),
+					Mask:   "id_token=***",
+				},
+			},
+		},
+		{
+			Field: "assertion",
+			Masks: []Mask{
+				{
+					RegExp: regexp.MustCompile(`(?i)"assertion"\s*:\s*".*?[^\\]"`),
+					Mask:   `"assertion": "***"`,
+				},
+				{
+					RegExp: regexp.MustCompile(`(?i)assertion\s*=\s*[^&\s]+`),
+					Mask:   "assertion=***",
+				},
+			},
+		},
+	}
+	require.Equal(t, expectedMasks, masker.FieldMasks)
 }

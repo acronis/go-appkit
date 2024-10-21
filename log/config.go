@@ -28,6 +28,7 @@ const (
 	cfgKeyAddCaller                    = "log.addCaller"
 	cfgKeyErrorNoVerbose               = "log.error.noVerbose"
 	cfgKeyErrorVerboseSuffix           = "log.error.verboseSuffix"
+	cfgKeyMasking                      = "log.masking"
 )
 
 // Default and restriction values.
@@ -60,6 +61,8 @@ type Config struct {
 	// Example of log with caller:
 	// 	{"level":"info","time":"...","msg":"starting application HTTP server...","caller":"httpserver/http_server.go:98","address":":8888"}
 	AddCaller bool
+
+	Masking MaskingConfig
 
 	keyPrefix string
 }
@@ -139,6 +142,7 @@ func (c *Config) SetProviderDefaults(dp config.DataProvider) {
 	dp.SetDefault(cfgKeyFileRotationMaxBackups, DefaultFileRotationMaxBackups)
 	dp.SetDefault(cfgKeyErrorNoVerbose, false)
 	dp.SetDefault(cfgKeyErrorVerboseSuffix, "_verbose")
+	c.Masking.SetProviderDefaults(config.NewKeyPrefixedDataProvider(dp, cfgKeyMasking))
 }
 
 var (
@@ -187,7 +191,9 @@ func (c *Config) Set(dp config.DataProvider) error {
 	if c.ErrorVerboseSuffix, err = dp.GetString(cfgKeyErrorVerboseSuffix); err != nil {
 		return err
 	}
-
+	if err := c.Masking.Set(config.NewKeyPrefixedDataProvider(dp, cfgKeyMasking)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -233,5 +239,52 @@ func (c *Config) setFileOutputConfig(dp config.DataProvider) error {
 		return err
 	}
 
+	return nil
+}
+
+type MaskingConfig struct {
+	Enabled         bool
+	UseDefaultRules bool
+	Rules           []MaskingRuleConfig
+}
+
+type MaskingRuleConfig struct {
+	Field   string            `mapstructure:"field"`
+	Formats []FieldMaskFormat `mapstructure:"formats"`
+	Masks   []MaskConfig      `mapstructure:"masks"`
+}
+
+type MaskConfig struct {
+	RegExp string `mapstructure:"regexp"`
+	Mask   string `mapstructure:"mask"`
+}
+
+type FieldMaskFormat string
+
+const (
+	FieldMaskFormatHTTPHeader FieldMaskFormat = "http_header"
+	FieldMaskFormatJSON       FieldMaskFormat = "json"
+	FieldMaskFormatURLEncoded FieldMaskFormat = "urlencoded"
+
+	cfgKeyMaskingEnabled         = "enabled"
+	cfgKeyMaskingUseDefaultRules = "useDefaultRules"
+	cfgKeyMaskingRules           = "rules"
+)
+
+func (c *MaskingConfig) SetProviderDefaults(dp config.DataProvider) {
+	dp.SetDefault(cfgKeyMaskingUseDefaultRules, true)
+}
+
+// Set sets logger configuration values from config.DataProvider.
+func (c *MaskingConfig) Set(dp config.DataProvider) (err error) {
+	if c.Enabled, err = dp.GetBool(cfgKeyMaskingEnabled); err != nil {
+		return err
+	}
+	if c.UseDefaultRules, err = dp.GetBool(cfgKeyMaskingUseDefaultRules); err != nil {
+		return err
+	}
+	if err := dp.UnmarshalKey(cfgKeyMaskingRules, &c.Rules); err != nil {
+		return err
+	}
 	return nil
 }
