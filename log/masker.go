@@ -21,6 +21,8 @@ type FieldMasker struct {
 	Masks []Mask
 }
 
+const ignoreCase = `(?i)`
+
 func NewFieldMasker(cfg MaskingRuleConfig) FieldMasker {
 	fMask := FieldMasker{Field: strings.ToLower(cfg.Field), Masks: make([]Mask, 0, len(cfg.Masks))}
 
@@ -30,11 +32,11 @@ func NewFieldMasker(cfg MaskingRuleConfig) FieldMasker {
 	for _, format := range cfg.Formats {
 		switch format {
 		case FieldMaskFormatHTTPHeader:
-			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{`(?i)` + cfg.Field + `: .+?\r\n`, cfg.Field + ": ***\r\n"}))
+			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{ignoreCase + cfg.Field + `: .+?\r\n`, cfg.Field + ": ***\r\n"}))
 		case FieldMaskFormatJSON:
-			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{`(?i)"` + cfg.Field + `"\s*:\s*".*?[^\\]"`, `"` + cfg.Field + `": "***"`}))
+			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{ignoreCase + `"` + cfg.Field + `"\s*:\s*".*?[^\\]"`, `"` + cfg.Field + `": "***"`}))
 		case FieldMaskFormatURLEncoded:
-			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{`(?i)` + cfg.Field + `\s*=\s*[^&\s]+`, cfg.Field + "=***"}))
+			fMask.Masks = append(fMask.Masks, NewMask(MaskConfig{ignoreCase + cfg.Field + `\s*=\s*[^&\s]+`, cfg.Field + "=***"}))
 		}
 	}
 	return fMask
