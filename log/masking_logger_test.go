@@ -3,12 +3,12 @@ package log_test
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
-	pkgErrors "github.com/pkg/errors"
 	"github.com/ssgreg/logf"
 	"github.com/stretchr/testify/require"
 
@@ -70,8 +70,10 @@ func TestMaskingLogger(t *testing.T) {
 	maskingLog.WithLevel(log.LevelInfo).Info("client_secret=123", log.String("value", "client_secret=***"))
 	checkRecordedLogAndReset("client_secret=***", log.LevelInfo, log.String("value", "client_secret=***"))
 
-	maskingLog.Error("abc", log.Error(pkgErrors.New("client_secret=665")))
-	require.Contains(t, fmt.Sprintf("%s", recorder.Entries()[0].Fields[0].Any), "client_secret=***")
+	maskingLog.Error("abc", log.Error(fmtError{errors.New("client_secret=665")}))
+	errS := fmt.Sprintf("%s", recorder.Entries()[0].Fields[0].Any)
+	require.Contains(t, errS, "client_secret=***")
+	require.Contains(t, errS, "password=***")
 	recorder.Reset()
 
 	maskingLog.Info("client_secret=123", log.Strings("value", []string{"client_secret=346"}))
@@ -79,6 +81,18 @@ func TestMaskingLogger(t *testing.T) {
 
 	maskingLog.Info("client_secret=123", log.Bytes("value", []byte("client_secret=346")))
 	checkRecordedLogAndReset("client_secret=***", log.LevelInfo, logf.ConstBytes("value", []byte("client_secret=***")))
+}
+
+type fmtError struct {
+	err error
+}
+
+func (e fmtError) Error() string {
+	return e.err.Error()
+}
+
+func (e fmtError) Format(f fmt.State, verb rune) {
+	_, _ = io.WriteString(f, e.Error()+" password=123")
 }
 
 var logFile = "output.log"
