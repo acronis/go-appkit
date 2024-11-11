@@ -37,44 +37,76 @@ const UnlimitedRetryAttempts = -1
 const RetryAttemptNumberHeader = "X-Retry-Attempt"
 
 // CheckRetryFunc is a function that is called right after RoundTrip() method
-// and determines if next retry attempt is needed.
+// and determines if the next retry attempt is needed.
 type CheckRetryFunc func(ctx context.Context, resp *http.Response, roundTripErr error, doneRetryAttempts int) (bool, error)
 
 // RetryableRoundTripper wraps an object that implements http.RoundTripper interface
-// and provides retrying mechanism for HTTP requests.
+// and provides a retrying mechanism for HTTP requests.
 type RetryableRoundTripper struct {
+	// Delegate is an object that implements http.RoundTripper interface
+	// and is used for sending HTTP requests under the hood.
 	Delegate http.RoundTripper
-	Logger   log.FieldLogger
+
+	// Logger is used for logging.
+	// When it's necessary to use context-specific logger, LoggerProvider should be used instead.
+	Logger log.FieldLogger
+
+	// LoggerProvider is a function that provides a context-specific logger.
+	// One of the typical use cases is to use a retryable client in the context of a request handler,
+	// where the logger should produce logs with request-specific information (e.g., request ID).
+	LoggerProvider func(ctx context.Context) log.FieldLogger
 
 	// MaxRetryAttempts determines how many maximum retry attempts can be done.
 	// The total number of sending HTTP request may be MaxRetryAttempts + 1 (the first request is not a retry attempt).
-	// If its value is UnlimitedRetryAttempts, it's supposed that retries mechanism will be stopped by BackoffPolicy.
+	// If its value is UnlimitedRetryAttempts, it's supposed that retry mechanism will be stopped by BackoffPolicy.
 	// By default, DefaultMaxRetryAttempts const is used.
 	MaxRetryAttempts int
 
-	// CheckRetry is called right after RoundTrip() method and determines if next retry attempt is needed.
+	// CheckRetry is called right after RoundTrip() method and determines if the next retry attempt is needed.
 	// By default, DefaultCheckRetry function is used.
 	CheckRetry CheckRetryFunc
 
 	// IgnoreRetryAfter determines if Retry-After HTTP header of the response is parsed and
-	// used as a wait time before doing next retry attempt.
+	// used as a wait time before doing the next retry attempt.
 	// If it's true or response doesn't contain Retry-After HTTP header, BackoffPolicy will be used for computing delay.
 	IgnoreRetryAfter bool
 
-	// BackoffPolicy is used for computing wait time before doing next retry attempt when the given response doesn't contain
-	// Retry-After HTTP header or IgnoreRetryAfter is true.
+	// BackoffPolicy is used for computing wait time before doing the next retry attempt
+	// when the given response doesn't contain Retry-After HTTP header or IgnoreRetryAfter is true.
 	// By default, DefaultBackoffPolicy is used.
 	BackoffPolicy retry.Policy
 }
 
 // RetryableRoundTripperOpts represents an options for RetryableRoundTripper.
-// See documentation for RetryableRoundTripper fields for details.
 type RetryableRoundTripperOpts struct {
-	Logger           log.FieldLogger
+	// Logger is used for logging.
+	// When it's necessary to use context-specific logger, LoggerProvider should be used instead.
+	Logger log.FieldLogger
+
+	// LoggerProvider is a function that provides a context-specific logger.
+	// One of the typical use cases is to use a retryable client in the context of a request handler,
+	// where the logger should produce logs with request-specific information (e.g., request ID).
+	LoggerProvider func(ctx context.Context) log.FieldLogger
+
+	// MaxRetryAttempts determines how many maximum retry attempts can be done.
+	// The total number of sending HTTP request may be MaxRetryAttempts + 1 (the first request is not a retry attempt).
+	// If its value is UnlimitedRetryAttempts, it's supposed that retry mechanism will be stopped by BackoffPolicy.
+	// By default, DefaultMaxRetryAttempts const is used.
 	MaxRetryAttempts int
-	CheckRetryFunc   CheckRetryFunc
+
+	// CheckRetry is called right after RoundTrip() method and determines if the next retry attempt is needed.
+	// By default, DefaultCheckRetry function is used.
+	CheckRetryFunc CheckRetryFunc
+
+	// IgnoreRetryAfter determines if Retry-After HTTP header of the response is parsed and
+	// used as a wait time before doing the next retry attempt.
+	// If it's true or response doesn't contain Retry-After HTTP header, BackoffPolicy will be used for computing delay.
 	IgnoreRetryAfter bool
-	BackoffPolicy    retry.Policy
+
+	// BackoffPolicy is used for computing wait time before doing the next retry attempt
+	// when the given response doesn't contain Retry-After HTTP header or IgnoreRetryAfter is true.
+	// By default, DefaultBackoffPolicy is used.
+	BackoffPolicy retry.Policy
 }
 
 // NewRetryableRoundTripper returns a new instance of RetryableRoundTripper.
@@ -108,6 +140,7 @@ func NewRetryableRoundTripperWithOpts(
 	return &RetryableRoundTripper{
 		Delegate:         delegate,
 		Logger:           opts.Logger,
+		LoggerProvider:   opts.LoggerProvider,
 		MaxRetryAttempts: opts.MaxRetryAttempts,
 		CheckRetry:       opts.CheckRetryFunc,
 		BackoffPolicy:    opts.BackoffPolicy,
@@ -144,13 +177,15 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 			if curRetryAttemptNum == 0 {
 				return nil, &RetryableRoundTripperError{Inner: rewindErr}
 			}
-			rt.Logger.Error("failed to rewind request body between retry attempts", log.Error(rewindErr))
+			rt.logger(reqCtx).Error(fmt.Sprintf(
+				"failed to rewind request body between retry attempts, %d request(s) done", curRetryAttemptNum+1),
+				log.Error(rewindErr))
 			return resp, roundTripErr
 		}
 
 		// Discard and close response body before next retry.
 		if resp != nil && roundTripErr == nil {
-			rt.drainResponseBody(resp)
+			rt.drainResponseBody(reqCtx, resp)
 		}
 
 		if curRetryAttemptNum > 0 {
@@ -166,7 +201,9 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		// Check if another retry attempt should be done
 		needRetry, checkRetryErr := rt.CheckRetry(reqCtx, resp, roundTripErr, curRetryAttemptNum)
 		if checkRetryErr != nil {
-			rt.Logger.Error("failed to check if retry is needed", log.Error(checkRetryErr))
+			rt.logger(reqCtx).Error(fmt.Sprintf(
+				"failed to check if retry is needed, %d request(s) done", curRetryAttemptNum+1),
+				log.Error(checkRetryErr))
 			return resp, roundTripErr
 		}
 		if !needRetry {
@@ -175,6 +212,8 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 		// Check should we stop (max attempts exceeded or by backoff policy).
 		if rt.MaxRetryAttempts > 0 && curRetryAttemptNum >= rt.MaxRetryAttempts {
+			rt.logger(reqCtx).Warnf("max retry attempts exceeded (%d), %d request(s) done",
+				rt.MaxRetryAttempts, curRetryAttemptNum+1)
 			return resp, roundTripErr
 		}
 		waitTime, stop := getNextWaitTime(resp)
@@ -184,7 +223,8 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 		select {
 		case <-reqCtx.Done():
-			rt.Logger.Error("context canceled while waiting for retry attempt", log.Error(reqCtx.Err()))
+			rt.logger(reqCtx).Warnf("context canceled (%v) while waiting for the next retry attempt, %d request(s) done",
+				reqCtx.Err(), curRetryAttemptNum+1)
 			return resp, roundTripErr
 		case <-time.After(waitTime):
 		}
@@ -206,15 +246,22 @@ func (rt *RetryableRoundTripper) makeNextWaitTimeProvider() waitTimeProvider {
 	}
 }
 
-func (rt *RetryableRoundTripper) drainResponseBody(resp *http.Response) {
+func (rt *RetryableRoundTripper) drainResponseBody(ctx context.Context, resp *http.Response) {
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
-			rt.Logger.Error("failed to close previous response body between retry attempts", log.Error(closeErr))
+			rt.logger(ctx).Error("failed to close previous response body between retry attempts", log.Error(closeErr))
 		}
 	}()
 	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		rt.Logger.Error("failed to discard previous response body between retry attempts", log.Error(err))
+		rt.logger(ctx).Error("failed to discard previous response body between retry attempts", log.Error(err))
 	}
+}
+
+func (rt *RetryableRoundTripper) logger(ctx context.Context) log.FieldLogger {
+	if rt.LoggerProvider != nil {
+		return rt.LoggerProvider(ctx)
+	}
+	return rt.Logger
 }
 
 // RetryableRoundTripperError is returned in RoundTrip method of RetryableRoundTripper

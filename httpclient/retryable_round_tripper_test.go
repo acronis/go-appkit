@@ -8,6 +8,8 @@ package httpclient
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +23,8 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/require"
 
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/log/logtest"
 	"github.com/acronis/go-appkit/retry"
 )
 
@@ -430,4 +434,70 @@ func TestCheckErrorIsTemporary(t *testing.T) {
 			require.Equal(t, tt.WantTempError, CheckErrorIsTemporary(err))
 		})
 	}
+}
+
+func TestRetryableRoundTripper_RoundTrip_Logging(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(wr http.ResponseWriter, req *http.Request) {
+		wr.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	type ctxKey string
+	const ctxKeyLogger ctxKey = "keyLogger"
+
+	internalErr := errors.New("internal error")
+
+	doRequestAndCheckLogs := func(t *testing.T, client *http.Client, req *http.Request, logRecorder *logtest.Recorder) {
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.NoError(t, resp.Body.Close())
+
+		require.Len(t, logRecorder.Entries(), 1)
+		require.Equal(t, "failed to check if retry is needed, 1 request(s) done", logRecorder.Entries()[0].Text)
+		logField, found := logRecorder.Entries()[0].FindField("error")
+		require.True(t, found)
+		require.Equal(t, internalErr, logField.Any)
+	}
+
+	t.Run("logger", func(t *testing.T) {
+		logRecorder := logtest.NewRecorder()
+
+		var rt http.RoundTripper
+		rt = http.DefaultTransport.(*http.Transport).Clone()
+		rt, err := NewRetryableRoundTripperWithOpts(rt, RetryableRoundTripperOpts{
+			Logger: logRecorder,
+			CheckRetryFunc: func(ctx context.Context, resp *http.Response, roundTripErr error, doneRetryAttempts int) (bool, error) {
+				return false, internalErr
+			},
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+
+		doRequestAndCheckLogs(t, &http.Client{Transport: rt}, req, logRecorder)
+	})
+
+	t.Run("logger from context", func(t *testing.T) {
+		logRecorder := logtest.NewRecorder()
+
+		var rt http.RoundTripper
+		rt = http.DefaultTransport.(*http.Transport).Clone()
+		rt, err := NewRetryableRoundTripperWithOpts(rt, RetryableRoundTripperOpts{
+			LoggerProvider: func(ctx context.Context) log.FieldLogger {
+				return ctx.Value(ctxKeyLogger).(log.FieldLogger)
+			},
+			CheckRetryFunc: func(ctx context.Context, resp *http.Response, roundTripErr error, doneRetryAttempts int) (bool, error) {
+				return false, internalErr
+			},
+		})
+		require.NoError(t, err)
+
+		req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+		require.NoError(t, err)
+		req = req.WithContext(context.WithValue(req.Context(), ctxKeyLogger, logRecorder))
+
+		doRequestAndCheckLogs(t, &http.Client{Transport: rt}, req, logRecorder)
+	})
 }
