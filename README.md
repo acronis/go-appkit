@@ -16,6 +16,12 @@ The project includes the following packages:
 + [service](./service) - ready-to-use primitives for creating services and managing their lifecycle.
 + [testutil](./testutil) - helpers for writing tests.
 
+## Installation
+
+```
+go get -u github.com/acronis/go-appkit
+```
+
 ## Examples
 
 ### Simple service that provides HTTP API
