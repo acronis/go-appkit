@@ -279,12 +279,12 @@ If specified limits are exceeded, the corresponding messages will be logged.
 For rate-limiting:
 
 ```json
-{..., "msg": "too many in-flight requests, serving will be continued because of dry run mode", "in_flight_limit_key": "3c00e780-5721-59f8-acad-f0bf719777d4", ...}
+{"msg": "too many requests, serving will be continued because of dry run mode", "rate_limit_key": "ee9a0dd8-7396-5478-8b83-ab7402d6746b"}
 ```
 
 For in-flight limiting:
 ```json
-{..., "msg": "too many requests, serving will be continued because of dry run mode", "rate_limit_key": "ee9a0dd8-7396-5478-8b83-ab7402d6746b", ...}
+{"msg": "too many in-flight requests, serving will be continued because of dry run mode", "in_flight_limit_key": "3c00e780-5721-59f8-acad-f0bf719777d4"}
 ```
 
 ## License
