@@ -1,5 +1,7 @@
 # Common Go packages for writing applications, services, and tools
 
+[![GoDoc Widget]][GoDoc]
+
 The project includes the following packages:
 
 + [config](./config) - loading configuration from environment variables, files, and `io.Reader`. YAML and JSON formats are supported out of the box.
@@ -275,3 +277,6 @@ Service logs:
 Copyright © 2024 Acronis International GmbH.
 
 Licensed under [MIT License](./LICENSE).
+
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg
