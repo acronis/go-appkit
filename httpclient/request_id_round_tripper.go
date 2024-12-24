@@ -7,6 +7,7 @@ Released under MIT license.
 package httpclient
 
 import (
+	"context"
 	"github.com/acronis/go-appkit/httpserver/middleware"
 	"net/http"
 )
@@ -14,6 +15,12 @@ import (
 // RequestIDRoundTripper for X-Request-ID header to the request.
 type RequestIDRoundTripper struct {
 	Delegate http.RoundTripper
+	Opts     RequestIDRoundTripperOpts
+}
+
+// RequestIDRoundTripperOpts for X-Request-ID header to the request options.
+type RequestIDRoundTripperOpts struct {
+	RequestIDProvider func(ctx context.Context) string
 }
 
 // NewRequestIDRoundTripper creates an HTTP transport with X-Request-ID header support.
@@ -23,9 +30,26 @@ func NewRequestIDRoundTripper(delegate http.RoundTripper) http.RoundTripper {
 	}
 }
 
+// NewRequestIDRoundTripperWithOpts creates an HTTP transport with X-Request-ID header support with options.
+func NewRequestIDRoundTripperWithOpts(delegate http.RoundTripper, opts RequestIDRoundTripperOpts) http.RoundTripper {
+	return &RequestIDRoundTripper{
+		Delegate: delegate,
+		Opts:     opts,
+	}
+}
+
+// getRequestIDProvider returns a function with the request ID provider.
+func (rt *RequestIDRoundTripper) getRequestIDProvider() func(ctx context.Context) string {
+	if rt.Opts.RequestIDProvider != nil {
+		return rt.Opts.RequestIDProvider
+	}
+
+	return middleware.GetRequestIDFromContext
+}
+
 // RoundTrip adds X-Request-ID header to the request.
 func (rt *RequestIDRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	requestID := middleware.GetRequestIDFromContext(r.Context())
+	requestID := rt.getRequestIDProvider()(r.Context())
 	if r.Header.Get("X-Request-ID") != "" || requestID == "" {
 		return rt.Delegate.RoundTrip(r)
 	}

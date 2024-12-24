@@ -34,3 +34,27 @@ func TestNewRequestIDRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 }
+
+func TestNewRequestIDRoundTripperWithOpts(t *testing.T) {
+	requestID := "12345"
+	prefix := "my_custom_request_provider"
+
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		require.Equal(t, prefix+requestID, r.Header.Get("X-Request-ID"))
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	requestIDRoundTripper := NewRequestIDRoundTripperWithOpts(http.DefaultTransport, RequestIDRoundTripperOpts{
+		RequestIDProvider: func(ctx context.Context) string {
+			return prefix + requestID
+		},
+	})
+	client := &http.Client{Transport: requestIDRoundTripper}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+}

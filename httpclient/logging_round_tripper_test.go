@@ -9,6 +9,7 @@ package httpclient
 import (
 	"context"
 	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
 	"github.com/acronis/go-appkit/log/logtest"
 	"github.com/stretchr/testify/require"
 	"net"
@@ -36,7 +37,7 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "external request POST "+server.URL+" req type test-request status code 418")
+	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
 }
 
 func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
@@ -46,8 +47,9 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	_ = ln.Close()
 
 	logger := logtest.NewRecorder()
-	cfg := NewHTTPClientConfig()
-	client := MustHTTPClient(cfg, "test-agent", "test-request", nil)
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+	client := MustHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
@@ -58,7 +60,122 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "external request POST "+serverURL+" req type test-request")
+	require.Contains(t, loggerEntry.Text, "client http request POST "+serverURL+" req type test-request")
 	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String()+": connect: connection refused")
 	require.NotContains(t, loggerEntry.Text, "status code")
+}
+
+func TestMustHTTPClientLoggingRoundTripperDisabled(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serverURL := "http://" + ln.Addr().String()
+	_ = ln.Close()
+
+	logger := logtest.NewRecorder()
+	cfg := NewConfig()
+	client := MustHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	ctx := middleware.NewContextWithLogger(context.Background(), logger)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	require.Error(t, err)
+	require.Nil(t, r)
+	require.Empty(t, logger.Entries())
+}
+
+func TestNewLoggingRoundTripperModes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rw.WriteHeader(http.StatusBadRequest)
+		} else {
+			rw.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name   string
+		method string
+		mode   string
+		want   int
+	}{
+		{
+			name:   "no requests are logged because of 'none' mode",
+			method: http.MethodGet,
+			mode:   "none",
+		},
+		{
+			name:   "4xx and 5xx requests are logged because of 'failed' mode",
+			method: http.MethodPost,
+			mode:   "failed",
+			want:   1,
+		},
+		{
+			name:   "only 4xx and 5xx requests so no logs because of 'failed' mode for 2xx",
+			method: http.MethodGet,
+			mode:   "failed",
+		},
+		{
+			name:   "success requests are logged because of 'all' mode",
+			method: http.MethodGet,
+			mode:   "all",
+			want:   1,
+		},
+		{
+			name:   "failed requests are logged because of 'all' mode",
+			method: http.MethodPost,
+			mode:   "all",
+			want:   1,
+		},
+	}
+
+	for i := range tests {
+		tt := tests[i]
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logtest.NewRecorder()
+			loggerRoundTripper := NewLoggingRoundTripperWithOpts(
+				http.DefaultTransport,
+				"test-request",
+				LoggingRoundTripperOpts{Mode: tt.mode},
+			)
+			client := &http.Client{Transport: loggerRoundTripper}
+			ctx := middleware.NewContextWithLogger(context.Background(), logger)
+			req, err := http.NewRequestWithContext(ctx, tt.method, server.URL, nil)
+			require.NoError(t, err)
+
+			r, err := client.Do(req)
+			defer func() { _ = r.Body.Close() }()
+			require.NoError(t, err)
+			require.Len(t, logger.Entries(), tt.want)
+		})
+	}
+}
+
+func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serverURL := "http://" + ln.Addr().String()
+	_ = ln.Close()
+
+	logger := logtest.NewRecorder()
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+
+	var loggerProviderCalled bool
+	client := MustHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{
+		Logger: func(ctx context.Context) log.FieldLogger {
+			loggerProviderCalled = true
+			return logger
+		},
+	})
+	ctx := middleware.NewContextWithLogger(context.Background(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	require.Error(t, err)
+	require.Nil(t, r)
+	require.True(t, loggerProviderCalled)
+	require.Len(t, logger.Entries(), 1)
 }

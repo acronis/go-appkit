@@ -8,8 +8,6 @@ package httpclient
 
 import (
 	"fmt"
-	"github.com/acronis/go-appkit/httpserver/middleware"
-	"github.com/acronis/go-appkit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"strconv"
@@ -17,29 +15,29 @@ import (
 )
 
 var (
-	ExternalHTTPRequestDuration *prometheus.HistogramVec
-	ClassifyRequest             func(r *http.Request, reqType string, logger log.FieldLogger) string
+	ClientHTTPRequestDuration *prometheus.HistogramVec
+	ClassifyRequest           func(r *http.Request, reqType string) string
 )
 
 // MustInitAndRegisterMetrics initializes and registers external HTTP request duration metric.
 // Panic will be raised in case of error.
 func MustInitAndRegisterMetrics(namespace string) {
-	ExternalHTTPRequestDuration = prometheus.NewHistogramVec(
+	ClientHTTPRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: namespace,
-			Name:      "external_http_request_duration",
-			Help:      "external HTTP request duration in seconds",
+			Name:      "http_client_request_duration_seconds",
+			Help:      "A histogram of the http client requests durations.",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150, 300, 600},
 		},
 		[]string{"type", "remote_address", "summary", "status"},
 	)
-	prometheus.MustRegister(ExternalHTTPRequestDuration)
+	prometheus.MustRegister(ClientHTTPRequestDuration)
 }
 
 // UnregisterMetrics unregisters external HTTP request duration metric.
 func UnregisterMetrics() {
-	if ExternalHTTPRequestDuration != nil {
-		prometheus.Unregister(ExternalHTTPRequestDuration)
+	if ClientHTTPRequestDuration != nil {
+		prometheus.Unregister(ClientHTTPRequestDuration)
 	}
 }
 
@@ -56,42 +54,29 @@ func NewMetricsRoundTripper(delegate http.RoundTripper, reqType string) http.Rou
 
 // RoundTrip measures external requests done.
 func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	if ExternalHTTPRequestDuration == nil {
+	if ClientHTTPRequestDuration == nil {
 		return rt.Delegate.RoundTrip(r)
 	}
 
-	logger := middleware.GetLoggerFromContext(r.Context())
+	status := "0"
 	start := time.Now()
-	status := "failed"
 
 	resp, err := rt.Delegate.RoundTrip(r)
 	if err == nil && resp != nil {
 		status = strconv.Itoa(resp.StatusCode)
-		if resp.StatusCode >= http.StatusBadRequest && logger != nil {
-			logger.Warnf("external request %s %s completed with HTTP status %d", r.Method, r.URL.String(), status)
-		}
-	} else if err != nil && logger != nil {
-		logger.Warnf("external request %s %s: %s", r.Method, r.URL.String(), err.Error())
 	}
 
-	ExternalHTTPRequestDuration.WithLabelValues(
-		rt.ReqType, r.Host, requestSummary(r, rt.ReqType, logger), status,
+	ClientHTTPRequestDuration.WithLabelValues(
+		rt.ReqType, r.Host, requestSummary(r, rt.ReqType), status,
 	).Observe(time.Since(start).Seconds())
 
 	return resp, err
 }
 
 // requestSummary does request classification, producing non-parameterized summary for given request.
-func requestSummary(r *http.Request, reqType string, logger log.FieldLogger) string {
+func requestSummary(r *http.Request, reqType string) string {
 	if ClassifyRequest != nil {
-		return ClassifyRequest(r, reqType, logger)
-	}
-
-	if logger != nil {
-		logger.Debugf(
-			"request classifier is not initialized, request %s %s will be marked as req type '%s' in metrics",
-			r.Method, r.URL.String(), reqType,
-		)
+		return ClassifyRequest(r, reqType)
 	}
 
 	return fmt.Sprintf("%s %s", r.Method, reqType)

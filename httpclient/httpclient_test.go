@@ -16,15 +16,18 @@ import (
 	"testing"
 )
 
-func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
+func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusTeapot)
 	}))
 	defer server.Close()
 
 	logger := logtest.NewRecorder()
-	cfg := NewHTTPClientConfig()
-	client := MustHTTPClient(cfg, "test-agent", "test-request", nil)
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+	client, err := NewHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	require.NoError(t, err)
+
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
@@ -35,5 +38,79 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "external request POST "+server.URL+" req type test-request status code 418")
+	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
+}
+
+func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	logger := logtest.NewRecorder()
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+	client := MustHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	ctx := middleware.NewContextWithLogger(context.Background(), logger)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+	require.NotEmpty(t, logger.Entries())
+
+	loggerEntry := logger.Entries()[0]
+	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
+}
+
+func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	logger := logtest.NewRecorder()
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+	client, err := NewHTTPClientWithOpts(ClientOpts{
+		Config:    *cfg,
+		UserAgent: "test-agent",
+		ReqType:   "test-request",
+		Delegate:  nil,
+	})
+	require.NoError(t, err)
+	ctx := middleware.NewContextWithLogger(context.Background(), logger)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+	require.NotEmpty(t, logger.Entries())
+}
+
+func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	logger := logtest.NewRecorder()
+	cfg := NewConfig()
+	cfg.Logger.Enabled = true
+	client := MustHTTPClientWithOpts(ClientOpts{
+		Config:    *cfg,
+		UserAgent: "test-agent",
+		ReqType:   "test-request",
+		Delegate:  nil,
+	})
+	ctx := middleware.NewContextWithLogger(context.Background(), logger)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+	require.NotEmpty(t, logger.Entries())
 }
