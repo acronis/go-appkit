@@ -35,9 +35,14 @@ func (lm LoggerMode) IsValid() bool {
 
 // LoggingRoundTripper implements http.RoundTripper for logging requests.
 type LoggingRoundTripper struct {
+	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
-	ReqType  string
-	Opts     LoggingRoundTripperOpts
+
+	// ReqType is a type of request.
+	ReqType string
+
+	// Opts are the options for the logging round tripper.
+	Opts LoggingRoundTripperOpts
 }
 
 // LoggingRoundTripperOpts represents an options for LoggingRoundTripper.

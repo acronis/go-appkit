@@ -43,8 +43,11 @@ func UnregisterMetrics() {
 
 // MetricsRoundTripper is an HTTP transport that measures requests done.
 type MetricsRoundTripper struct {
+	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
-	ReqType  string
+
+	// ReqType is a type of request.
+	ReqType string
 }
 
 // NewMetricsRoundTripper creates an HTTP transport that measures requests done.

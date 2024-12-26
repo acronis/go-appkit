@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
@@ -113,4 +114,34 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
+}
+
+func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
+	var retriesCount int
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		retriesCount++
+		rw.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := NewConfig()
+	cfg.Retries.Enabled = true
+	cfg.Retries.MaxAttempts = 1
+	cfg.Retries.Policy.Strategy = RetryPolicyExponential
+	cfg.Retries.Policy.ExponentialBackoffInitialInterval = 2 * time.Millisecond
+	cfg.Retries.Policy.ExponentialBackoffMultiplier = 1.1
+
+	client := MustHTTPClientWithOpts(ClientOpts{
+		Config:    *cfg,
+		UserAgent: "test-agent",
+		ReqType:   "test-request",
+		Delegate:  nil,
+	})
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+	require.Equal(t, 2, retriesCount)
 }

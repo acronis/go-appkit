@@ -34,7 +34,10 @@ func CloneHTTPHeader(in http.Header) http.Header {
 
 // ClientProviders for further customization of the client logging and request id.
 type ClientProviders struct {
-	Logger    func(ctx context.Context) log.FieldLogger
+	// Logger is a function that provides a context-specific logger.
+	Logger func(ctx context.Context) log.FieldLogger
+
+	// RequestID is a function that provides a request ID.
 	RequestID func(ctx context.Context) string
 }
 
@@ -75,6 +78,7 @@ func NewHTTPClient(
 	if cfg.Retries.Enabled {
 		opts := cfg.Retries.TransportOpts()
 		opts.LoggerProvider = providers.Logger
+		opts.BackoffPolicy = cfg.Retries.GetPolicy()
 		delegate, err = NewRetryableRoundTripperWithOpts(delegate, opts)
 		if err != nil {
 			return nil, fmt.Errorf("create retryable round tripper: %w", err)
@@ -108,10 +112,19 @@ func MustHTTPClient(
 
 // ClientOpts provides options for NewHTTPClientWithOpts and MustHTTPClientWithOpts functions.
 type ClientOpts struct {
-	Config    Config
+	// Config is the configuration for the HTTP client.
+	Config Config
+
+	// UserAgent is a user agent string.
 	UserAgent string
-	ReqType   string
-	Delegate  http.RoundTripper
+
+	// ReqType is a type of request.
+	ReqType string
+
+	// Delegate is the next RoundTripper in the chain.
+	Delegate http.RoundTripper
+
+	// Providers are the functions that provide a context-specific logger and request ID.
 	Providers ClientProviders
 }
 

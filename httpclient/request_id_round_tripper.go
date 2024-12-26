@@ -14,12 +14,16 @@ import (
 
 // RequestIDRoundTripper for X-Request-ID header to the request.
 type RequestIDRoundTripper struct {
+	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
-	Opts     RequestIDRoundTripperOpts
+
+	// Opts are the options for the request ID round tripper.
+	Opts RequestIDRoundTripperOpts
 }
 
 // RequestIDRoundTripperOpts for X-Request-ID header to the request options.
 type RequestIDRoundTripperOpts struct {
+	// RequestIDProvider is a function that provides a request ID.
 	RequestIDProvider func(ctx context.Context) string
 }
 
