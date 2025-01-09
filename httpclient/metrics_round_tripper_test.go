@@ -21,10 +21,13 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 	}))
 	defer server.Close()
 
-	MustInitAndRegisterMetrics("")
-	defer UnregisterMetrics()
+	collector := NewPrometheusMetricsCollector("")
+	defer collector.Unregister()
 
-	metricsRoundTripper := NewMetricsRoundTripper(http.DefaultTransport, "test-request")
+	metricsRoundTripper := NewMetricsRoundTripperWithOpts(http.DefaultTransport, MetricsRoundTripperOpts{
+		ReqType:   "test-request",
+		Collector: collector,
+	})
 	client := &http.Client{Transport: metricsRoundTripper}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
@@ -35,7 +38,7 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 
 	ch := make(chan prometheus.Metric, 1)
 	go func() {
-		metrics.HTTPRequestDuration.Collect(ch)
+		collector.Durations.Collect(ch)
 		close(ch)
 	}()
 

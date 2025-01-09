@@ -25,7 +25,7 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	defer server.Close()
 
 	logger := logtest.NewRecorder()
-	loggerRoundTripper := NewLoggingRoundTripper(http.DefaultTransport, "test-request")
+	loggerRoundTripper := NewLoggingRoundTripper(http.DefaultTransport)
 	client := &http.Client{Transport: loggerRoundTripper}
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
@@ -37,7 +37,10 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
+	require.Contains(
+		t, loggerEntry.Text,
+		"client http request POST "+server.URL+" req type "+DefaultReqType+" status code 418",
+	)
 }
 
 func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
@@ -49,7 +52,7 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
-	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
@@ -73,7 +76,7 @@ func TestMustHTTPClientLoggingRoundTripperDisabled(t *testing.T) {
 
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
-	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
@@ -136,8 +139,10 @@ func TestNewLoggingRoundTripperModes(t *testing.T) {
 			logger := logtest.NewRecorder()
 			loggerRoundTripper := NewLoggingRoundTripperWithOpts(
 				http.DefaultTransport,
-				"test-request",
-				LoggingRoundTripperOpts{Mode: tt.mode},
+				LoggingRoundTripperOpts{
+					ReqType: "test-request",
+					Mode:    tt.mode,
+				},
 			)
 			client := &http.Client{Transport: loggerRoundTripper}
 			ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -168,7 +173,7 @@ func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
 			loggerProviderCalled = true
 			return logger
 		},
-	})
+	}, nil)
 	ctx := middleware.NewContextWithLogger(context.Background(), nil)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)

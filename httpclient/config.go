@@ -15,6 +15,9 @@ import (
 )
 
 const (
+	// DefaultReqType is a default request type.
+	DefaultReqType = "go-appkit"
+
 	// DefaultClientWaitTimeout is a default timeout for a client to wait for a request.
 	DefaultClientWaitTimeout = 10 * time.Second
 
@@ -48,16 +51,16 @@ var _ config.KeyPrefixProvider = (*Config)(nil)
 // RateLimitConfig represents configuration options for HTTP client rate limits.
 type RateLimitConfig struct {
 	// Enabled is a flag that enables rate limiting.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 
 	// Limit is the maximum number of requests that can be made.
-	Limit int `mapstructure:"limit"`
+	Limit int
 
 	// Burst allow temporary spikes in request rate.
-	Burst int `mapstructure:"burst"`
+	Burst int
 
 	// WaitTimeout is the maximum time to wait for a request to be made.
-	WaitTimeout time.Duration `mapstructure:"waitTimeout"`
+	WaitTimeout time.Duration
 }
 
 // Set is part of config interface implementation.
@@ -116,16 +119,16 @@ func (c *RateLimitConfig) TransportOpts() RateLimitingRoundTripperOpts {
 // PolicyConfig represents configuration options for policy retry.
 type PolicyConfig struct {
 	// Strategy is a strategy for retry policy.
-	Strategy string `mapstructure:"strategy"`
+	Strategy string
 
 	// ExponentialBackoffInitialInterval is the initial interval for exponential backoff.
-	ExponentialBackoffInitialInterval time.Duration `mapstructure:"exponentialBackoffInitialInterval"`
+	ExponentialBackoffInitialInterval time.Duration
 
 	// ExponentialBackoffMultiplier is the multiplier for exponential backoff.
-	ExponentialBackoffMultiplier float64 `mapstructure:"exponentialBackoffMultiplier"`
+	ExponentialBackoffMultiplier float64
 
 	// ConstantBackoffInterval is the interval for constant backoff.
-	ConstantBackoffInterval time.Duration `mapstructure:"constantBackoffInterval"`
+	ConstantBackoffInterval time.Duration
 }
 
 // Set is part of config interface implementation.
@@ -183,13 +186,13 @@ func (c *PolicyConfig) SetProviderDefaults(_ config.DataProvider) {}
 // RetriesConfig represents configuration options for HTTP client retries policy.
 type RetriesConfig struct {
 	// Enabled is a flag that enables retries.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 
 	// MaxAttempts is the maximum number of attempts to retry the request.
-	MaxAttempts int `mapstructure:"maxAttempts"`
+	MaxAttempts int
 
 	// Policy of a retry: [exponential, constant]. default is exponential.
-	Policy PolicyConfig `mapstructure:"policy"`
+	Policy PolicyConfig
 }
 
 // GetPolicy returns a retry policy based on strategy or nil if none is provided.
@@ -253,13 +256,13 @@ func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
 // LogConfig represents configuration options for HTTP client logs.
 type LogConfig struct {
 	// Enabled is a flag that enables logging.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 
 	// SlowRequestThreshold is a threshold for slow requests.
-	SlowRequestThreshold time.Duration `mapstructure:"slowRequestThreshold"`
+	SlowRequestThreshold time.Duration
 
 	// Mode of logging.
-	Mode LoggingMode `mapstructure:"mode"`
+	Mode LoggingMode
 }
 
 // Set is part of config interface implementation.
@@ -310,7 +313,7 @@ func (c *LogConfig) TransportOpts() LoggingRoundTripperOpts {
 // MetricsConfig represents configuration options for HTTP client logs.
 type MetricsConfig struct {
 	// Enabled is a flag that enables metrics.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 }
 
 // Set is part of config interface implementation.
@@ -330,19 +333,19 @@ func (c *MetricsConfig) SetProviderDefaults(_ config.DataProvider) {}
 // Config represents options for HTTP client configuration.
 type Config struct {
 	// Retries is a configuration for HTTP client retries policy.
-	Retries RetriesConfig `mapstructure:"retries"`
+	Retries RetriesConfig
 
 	// RateLimits is a configuration for HTTP client rate limits.
-	RateLimits RateLimitConfig `mapstructure:"rateLimits"`
+	RateLimits RateLimitConfig
 
 	// Log is a configuration for HTTP client logs.
-	Log LogConfig `mapstructure:"log"`
+	Log LogConfig
 
 	// Metrics is a configuration for HTTP client metrics.
-	Metrics MetricsConfig `mapstructure:"metrics"`
+	Metrics MetricsConfig
 
 	// Timeout is the maximum time to wait for a request to be made.
-	Timeout time.Duration `mapstructure:"timeout"`
+	Timeout time.Duration
 
 	// keyPrefix is a prefix for configuration parameters.
 	keyPrefix string

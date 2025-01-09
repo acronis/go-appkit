@@ -26,7 +26,7 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
-	client, err := New(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	client, err := New(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
 	require.NoError(t, err)
 
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -51,7 +51,7 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
-	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
 	require.NoError(t, err)

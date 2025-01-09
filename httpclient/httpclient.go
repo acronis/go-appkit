@@ -49,6 +49,7 @@ func New(
 	reqType string,
 	delegate http.RoundTripper,
 	providers ClientProviders,
+	collector MetricsCollector,
 ) (*http.Client, error) {
 	var err error
 
@@ -59,11 +60,15 @@ func New(
 	if cfg.Log.Enabled {
 		opts := cfg.Log.TransportOpts()
 		opts.LoggerProvider = providers.Logger
-		delegate = NewLoggingRoundTripperWithOpts(delegate, reqType, opts)
+		opts.ReqType = reqType
+		delegate = NewLoggingRoundTripperWithOpts(delegate, opts)
 	}
 
 	if cfg.Metrics.Enabled {
-		delegate = NewMetricsRoundTripper(delegate, reqType)
+		delegate = NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{
+			ReqType:   reqType,
+			Collector: collector,
+		})
 	}
 
 	if cfg.RateLimits.Enabled {
@@ -104,8 +109,9 @@ func Must(
 	reqType string,
 	delegate http.RoundTripper,
 	providers ClientProviders,
+	collector MetricsCollector,
 ) *http.Client {
-	client, err := New(cfg, userAgent, reqType, delegate, providers)
+	client, err := New(cfg, userAgent, reqType, delegate, providers, collector)
 	if err != nil {
 		panic(err)
 	}
@@ -126,18 +132,21 @@ type Opts struct {
 
 	// Providers are the functions that provide a context-specific logger and request ID.
 	Providers ClientProviders
+
+	// Collector is a metrics collector.
+	Collector MetricsCollector
 }
 
 // NewWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and returns an error if any occurs.
 func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
-	return New(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
+	return New(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers, opts.Collector)
 }
 
 // MustWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and panics if any error occurs.
 func MustWithOpts(cfg *Config, opts Opts) *http.Client {
-	return Must(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
+	return Must(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers, opts.Collector)
 }
