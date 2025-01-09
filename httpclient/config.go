@@ -27,17 +27,17 @@ const (
 	// configuration properties
 	cfgKeyRetriesEnabled                          = "retries.enabled"
 	cfgKeyRetriesMax                              = "retries.maxAttempts"
-	cfgKeyRetriesPolicyStrategy                   = "retries.policy.strategy"
-	cfgKeyRetriesPolicyExponentialInitialInterval = "retries.policy.exponentialBackoffInitialInterval"
-	cfgKeyRetriesPolicyExponentialMultiplier      = "retries.policy.exponentialBackoffMultiplier"
-	cfgKeyRetriesPolicyConstantInternal           = "retries.policy.constantBackoffInterval"
+	cfgKeyRetriesPolicyStrategy                   = "retries.policy"
+	cfgKeyRetriesPolicyExponentialInitialInterval = "retries.exponentialBackoff.initialInterval"
+	cfgKeyRetriesPolicyExponentialMultiplier      = "retries.exponentialBackoff.multiplier"
+	cfgKeyRetriesPolicyConstantInternal           = "retries.constantBackoff.interval"
 	cfgKeyRateLimitsEnabled                       = "rateLimits.enabled"
 	cfgKeyRateLimitsLimit                         = "rateLimits.limit"
 	cfgKeyRateLimitsBurst                         = "rateLimits.burst"
 	cfgKeyRateLimitsWaitTimeout                   = "rateLimits.waitTimeout"
-	cfgKeyLoggerEnabled                           = "logger.enabled"
-	cfgKeyLoggerMode                              = "logger.mode"
-	cfgKeyLoggerSlowRequestThreshold              = "logger.slowRequestThreshold"
+	cfgKeyLogEnabled                              = "log.enabled"
+	cfgKeyLogMode                                 = "log.mode"
+	cfgKeyLogSlowRequestThreshold                 = "log.slowRequestThreshold"
 	cfgKeyMetricsEnabled                          = "metrics.enabled"
 	cfgKeyTimeout                                 = "timeout"
 )
@@ -77,7 +77,7 @@ func (c *RateLimitConfig) Set(dp config.DataProvider) (err error) {
 		return err
 	}
 	if limit <= 0 {
-		return errors.New("client rate limit must be positive")
+		return dp.WrapKeyErr(cfgKeyRateLimitsLimit, errors.New("must be positive"))
 	}
 	c.Limit = limit
 
@@ -86,7 +86,7 @@ func (c *RateLimitConfig) Set(dp config.DataProvider) (err error) {
 		return err
 	}
 	if burst < 0 {
-		return errors.New("client burst must be positive")
+		return dp.WrapKeyErr(cfgKeyRateLimitsBurst, errors.New("must be positive"))
 	}
 	c.Burst = burst
 
@@ -95,7 +95,7 @@ func (c *RateLimitConfig) Set(dp config.DataProvider) (err error) {
 		return err
 	}
 	if waitTimeout < 0 {
-		return errors.New("client wait timeout must be positive")
+		return dp.WrapKeyErr(cfgKeyRateLimitsWaitTimeout, errors.New("must be positive"))
 	}
 	c.WaitTimeout = waitTimeout
 
@@ -137,7 +137,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 	c.Strategy = strategy
 
 	if c.Strategy != "" && c.Strategy != RetryPolicyExponential && c.Strategy != RetryPolicyConstant {
-		return errors.New("client retry policy must be one of: [exponential, constant]")
+		return dp.WrapKeyErr(cfgKeyRetriesPolicyStrategy, errors.New("must be one of: [exponential, constant]"))
 	}
 
 	if c.Strategy == RetryPolicyExponential {
@@ -147,7 +147,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 			return nil
 		}
 		if interval < 0 {
-			return errors.New("client exponential backoff initial interval must be positive")
+			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialInitialInterval, errors.New("must be positive"))
 		}
 		c.ExponentialBackoffInitialInterval = interval
 
@@ -157,7 +157,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 			return err
 		}
 		if multiplier <= 1 {
-			return errors.New("client exponential backoff multiplier must be greater than 1")
+			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialMultiplier, errors.New("must be greater than 1"))
 		}
 		c.ExponentialBackoffMultiplier = multiplier
 
@@ -169,7 +169,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 			return err
 		}
 		if interval < 0 {
-			return errors.New("client constant backoff interval must be positive")
+			return dp.WrapKeyErr(cfgKeyRetriesPolicyConstantInternal, errors.New("must be positive"))
 		}
 		c.ConstantBackoffInterval = interval
 	}
@@ -230,7 +230,7 @@ func (c *RetriesConfig) Set(dp config.DataProvider) error {
 		return err
 	}
 	if maxAttempts < 0 {
-		return errors.New("client max retry attempts must be positive")
+		return dp.WrapKeyErr(cfgKeyRetriesMax, errors.New("must be positive"))
 	}
 	c.MaxAttempts = maxAttempts
 
@@ -250,8 +250,8 @@ func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
 	return RetryableRoundTripperOpts{MaxRetryAttempts: c.MaxAttempts}
 }
 
-// LoggerConfig represents configuration options for HTTP client logs.
-type LoggerConfig struct {
+// LogConfig represents configuration options for HTTP client logs.
+type LogConfig struct {
 	// Enabled is a flag that enables logging.
 	Enabled bool `mapstructure:"enabled"`
 
@@ -259,12 +259,12 @@ type LoggerConfig struct {
 	SlowRequestThreshold time.Duration `mapstructure:"slowRequestThreshold"`
 
 	// Mode of logging.
-	Mode string `mapstructure:"mode"`
+	Mode LoggingMode `mapstructure:"mode"`
 }
 
 // Set is part of config interface implementation.
-func (c *LoggerConfig) Set(dp config.DataProvider) error {
-	enabled, err := dp.GetBool(cfgKeyLoggerEnabled)
+func (c *LogConfig) Set(dp config.DataProvider) error {
+	enabled, err := dp.GetBool(cfgKeyLogEnabled)
 	if err != nil {
 		return err
 	}
@@ -274,32 +274,33 @@ func (c *LoggerConfig) Set(dp config.DataProvider) error {
 		return nil
 	}
 
-	slowRequestThreshold, err := dp.GetDuration(cfgKeyLoggerSlowRequestThreshold)
+	slowRequestThreshold, err := dp.GetDuration(cfgKeyLogSlowRequestThreshold)
 	if err != nil {
 		return err
 	}
 	if slowRequestThreshold < 0 {
-		return errors.New("client logger slow request threshold can not be negative")
+		return dp.WrapKeyErr(cfgKeyLogSlowRequestThreshold, errors.New("can not be negative"))
 	}
 	c.SlowRequestThreshold = slowRequestThreshold
 
-	mode, err := dp.GetString(cfgKeyLoggerMode)
+	mode, err := dp.GetString(cfgKeyLogMode)
 	if err != nil {
 		return err
 	}
-	if !LoggerMode(mode).IsValid() {
-		return errors.New("client logger invalid mode, choose one of: [none, all, failed]")
+	loggingMode := LoggingMode(mode)
+	if !loggingMode.IsValid() {
+		return dp.WrapKeyErr(cfgKeyLogMode, errors.New("choose one of: [none, all, failed]"))
 	}
-	c.Mode = mode
+	c.Mode = loggingMode
 
 	return nil
 }
 
 // SetProviderDefaults is part of config interface implementation.
-func (c *LoggerConfig) SetProviderDefaults(_ config.DataProvider) {}
+func (c *LogConfig) SetProviderDefaults(_ config.DataProvider) {}
 
 // TransportOpts returns transport options.
-func (c *LoggerConfig) TransportOpts() LoggingRoundTripperOpts {
+func (c *LogConfig) TransportOpts() LoggingRoundTripperOpts {
 	return LoggingRoundTripperOpts{
 		Mode:                 c.Mode,
 		SlowRequestThreshold: c.SlowRequestThreshold,
@@ -334,8 +335,8 @@ type Config struct {
 	// RateLimits is a configuration for HTTP client rate limits.
 	RateLimits RateLimitConfig `mapstructure:"rateLimits"`
 
-	// Logger is a configuration for HTTP client logs.
-	Logger LoggerConfig `mapstructure:"logger"`
+	// Log is a configuration for HTTP client logs.
+	Log LogConfig `mapstructure:"log"`
 
 	// Metrics is a configuration for HTTP client metrics.
 	Metrics MetricsConfig `mapstructure:"metrics"`
@@ -381,7 +382,7 @@ func (c *Config) Set(dp config.DataProvider) error {
 		return err
 	}
 
-	err = c.Logger.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
+	err = c.Log.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
 	if err != nil {
 		return err
 	}

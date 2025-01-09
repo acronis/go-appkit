@@ -41,9 +41,9 @@ type ClientProviders struct {
 	RequestID func(ctx context.Context) string
 }
 
-// NewHTTPClient wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
+// New wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
 // and returns an error if any occurs.
-func NewHTTPClient(
+func New(
 	cfg *Config,
 	userAgent string,
 	reqType string,
@@ -56,8 +56,8 @@ func NewHTTPClient(
 		delegate = http.DefaultTransport.(*http.Transport).Clone()
 	}
 
-	if cfg.Logger.Enabled {
-		opts := cfg.Logger.TransportOpts()
+	if cfg.Log.Enabled {
+		opts := cfg.Log.TransportOpts()
 		opts.LoggerProvider = providers.Logger
 		delegate = NewLoggingRoundTripperWithOpts(delegate, reqType, opts)
 	}
@@ -75,6 +75,14 @@ func NewHTTPClient(
 		}
 	}
 
+	if userAgent != "" {
+		delegate = NewUserAgentRoundTripper(delegate, userAgent)
+	}
+
+	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{
+		RequestIDProvider: providers.RequestID,
+	})
+
 	if cfg.Retries.Enabled {
 		opts := cfg.Retries.TransportOpts()
 		opts.LoggerProvider = providers.Logger
@@ -85,24 +93,19 @@ func NewHTTPClient(
 		}
 	}
 
-	delegate = NewUserAgentRoundTripper(delegate, userAgent)
-	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{
-		RequestIDProvider: providers.RequestID,
-	})
-
 	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
 }
 
-// MustHTTPClient wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
+// Must wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
 // and panics if any error occurs.
-func MustHTTPClient(
+func Must(
 	cfg *Config,
-	userAgent,
+	userAgent string,
 	reqType string,
 	delegate http.RoundTripper,
 	providers ClientProviders,
 ) *http.Client {
-	client, err := NewHTTPClient(cfg, userAgent, reqType, delegate, providers)
+	client, err := New(cfg, userAgent, reqType, delegate, providers)
 	if err != nil {
 		panic(err)
 	}
@@ -110,15 +113,12 @@ func MustHTTPClient(
 	return client
 }
 
-// ClientOpts provides options for NewHTTPClientWithOpts and MustHTTPClientWithOpts functions.
-type ClientOpts struct {
-	// Config is the configuration for the HTTP client.
-	Config Config
-
+// Opts provides options for NewWithOpts and MustWithOpts functions.
+type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
-	// ReqType is a type of request.
+	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
 	ReqType string
 
 	// Delegate is the next RoundTripper in the chain.
@@ -128,16 +128,16 @@ type ClientOpts struct {
 	Providers ClientProviders
 }
 
-// NewHTTPClientWithOpts wraps delegate transports with options
+// NewWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and returns an error if any occurs.
-func NewHTTPClientWithOpts(opts ClientOpts) (*http.Client, error) {
-	return NewHTTPClient(&opts.Config, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
+func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
+	return New(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
 }
 
-// MustHTTPClientWithOpts wraps delegate transports with options
+// MustWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and panics if any error occurs.
-func MustHTTPClientWithOpts(opts ClientOpts) *http.Client {
-	return MustHTTPClient(&opts.Config, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
+func MustWithOpts(cfg *Config, opts Opts) *http.Client {
+	return Must(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers)
 }

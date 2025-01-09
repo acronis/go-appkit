@@ -15,19 +15,19 @@ import (
 	"time"
 )
 
-// LoggerMode represents a mode of logging.
-type LoggerMode string
+// LoggingMode represents a mode of logging.
+type LoggingMode string
 
 const (
-	LoggerModeNone   LoggerMode = "none"
-	LoggerModeAll    LoggerMode = "all"
-	LoggerModeFailed LoggerMode = "failed"
+	LoggingModeNone   LoggingMode = "none"
+	LoggingModeAll    LoggingMode = "all"
+	LoggingModeFailed LoggingMode = "failed"
 )
 
 // IsValid checks if the logger mode is valid.
-func (lm LoggerMode) IsValid() bool {
+func (lm LoggingMode) IsValid() bool {
 	switch lm {
-	case LoggerModeNone, LoggerModeAll, LoggerModeFailed:
+	case LoggingModeNone, LoggingModeAll, LoggingModeFailed:
 		return true
 	}
 	return false
@@ -38,7 +38,7 @@ type LoggingRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// ReqType is a type of request.
+	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
 	ReqType string
 
 	// Opts are the options for the logging round tripper.
@@ -48,10 +48,11 @@ type LoggingRoundTripper struct {
 // LoggingRoundTripperOpts represents an options for LoggingRoundTripper.
 type LoggingRoundTripperOpts struct {
 	// LoggerProvider is a function that provides a context-specific logger.
+	// middleware.GetLoggerFromContext is used by default.
 	LoggerProvider func(ctx context.Context) log.FieldLogger
 
 	// Mode of logging: none, all, failed.
-	Mode string
+	Mode LoggingMode
 
 	// SlowRequestThreshold is a threshold for slow requests.
 	SlowRequestThreshold time.Duration
@@ -88,7 +89,7 @@ func (rt *LoggingRoundTripper) getLogger(ctx context.Context) log.FieldLogger {
 
 // RoundTrip adds logging capabilities to the HTTP transport.
 func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	if rt.Opts.Mode == string(LoggerModeNone) {
+	if rt.Opts.Mode == LoggingModeNone {
 		return rt.Delegate.RoundTrip(r)
 	}
 
@@ -103,11 +104,10 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		args := []interface{}{r.Method, r.URL.String(), rt.ReqType, elapsed.Seconds(), err}
 		message := common + "time taken %.3f, err %+v"
 		loggerAtLevel := logger.Infof
-		shouldModeLog := true
 
 		if resp != nil {
-			if rt.Opts.Mode == string(LoggerModeFailed) && resp.StatusCode < http.StatusBadRequest {
-				shouldModeLog = false
+			if rt.Opts.Mode == LoggingModeFailed && resp.StatusCode < http.StatusBadRequest {
+				return resp, err
 			}
 
 			args = []interface{}{r.Method, r.URL.String(), rt.ReqType, resp.StatusCode, elapsed.Seconds(), err}
@@ -118,11 +118,13 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 			loggerAtLevel = logger.Errorf
 		}
 
-		if shouldModeLog {
-			loggerAtLevel(message, args...)
-			loggingParams := middleware.GetLoggingParamsFromContext(ctx)
-			if loggingParams != nil {
-				loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.ReqType), elapsed)
+		loggerAtLevel(message, args...)
+		loggingParams := middleware.GetLoggingParamsFromContext(ctx)
+		if loggingParams != nil {
+			loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.ReqType), elapsed)
+			requestID := middleware.GetRequestIDFromContext(ctx)
+			if requestID != "" {
+				loggingParams.ExtendFields(log.String("request_id", requestID))
 			}
 		}
 	}

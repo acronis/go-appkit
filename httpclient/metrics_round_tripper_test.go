@@ -35,7 +35,7 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 
 	ch := make(chan prometheus.Metric, 1)
 	go func() {
-		ClientHTTPRequestDuration.Collect(ch)
+		metrics.HTTPRequestDuration.Collect(ch)
 		close(ch)
 	}()
 

@@ -25,8 +25,8 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
-	cfg.Logger.Enabled = true
-	client, err := NewHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	cfg.Log.Enabled = true
+	client, err := New(cfg, "test-agent", "test-request", nil, ClientProviders{})
 	require.NoError(t, err)
 
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -50,8 +50,8 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
-	cfg.Logger.Enabled = true
-	client := MustHTTPClient(cfg, "test-agent", "test-request", nil, ClientProviders{})
+	cfg.Log.Enabled = true
+	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{})
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
@@ -73,9 +73,8 @@ func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
 
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
-	cfg.Logger.Enabled = true
-	client, err := NewHTTPClientWithOpts(ClientOpts{
-		Config:    *cfg,
+	cfg.Log.Enabled = true
+	client, err := NewWithOpts(cfg, Opts{
 		UserAgent: "test-agent",
 		ReqType:   "test-request",
 		Delegate:  nil,
@@ -99,9 +98,8 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
-	cfg.Logger.Enabled = true
-	client := MustHTTPClientWithOpts(ClientOpts{
-		Config:    *cfg,
+	cfg.Log.Enabled = true
+	client := MustWithOpts(cfg, Opts{
 		UserAgent: "test-agent",
 		ReqType:   "test-request",
 		Delegate:  nil,
@@ -131,8 +129,7 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	cfg.Retries.Policy.ExponentialBackoffInitialInterval = 2 * time.Millisecond
 	cfg.Retries.Policy.ExponentialBackoffMultiplier = 1.1
 
-	client := MustHTTPClientWithOpts(ClientOpts{
-		Config:    *cfg,
+	client := MustWithOpts(cfg, Opts{
 		UserAgent: "test-agent",
 		ReqType:   "test-request",
 		Delegate:  nil,

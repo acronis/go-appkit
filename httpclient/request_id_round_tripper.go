@@ -24,6 +24,7 @@ type RequestIDRoundTripper struct {
 // RequestIDRoundTripperOpts for X-Request-ID header to the request options.
 type RequestIDRoundTripperOpts struct {
 	// RequestIDProvider is a function that provides a request ID.
+	// middleware.GetRequestIDFromContext is used by default.
 	RequestIDProvider func(ctx context.Context) string
 }
 
@@ -53,11 +54,11 @@ func (rt *RequestIDRoundTripper) getRequestIDProvider() func(ctx context.Context
 
 // RoundTrip adds X-Request-ID header to the request.
 func (rt *RequestIDRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	requestID := rt.getRequestIDProvider()(r.Context())
-	if r.Header.Get("X-Request-ID") != "" || requestID == "" {
+	if r.Header.Get("X-Request-ID") != "" {
 		return rt.Delegate.RoundTrip(r)
 	}
 
+	requestID := rt.getRequestIDProvider()(r.Context())
 	r = CloneHTTPRequest(r)
 	r.Header.Set("X-Request-ID", requestID)
 	return rt.Delegate.RoundTrip(r)

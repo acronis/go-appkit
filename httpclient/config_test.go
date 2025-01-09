@@ -38,7 +38,7 @@ func TestConfigWithLoader(t *testing.T) {
 			Burst:       3000,
 			WaitTimeout: 3 * time.Second,
 		},
-		Logger: LoggerConfig{
+		Log: LogConfig{
 			Enabled:              true,
 			SlowRequestThreshold: 5 * time.Second,
 			Mode:                 "all",
@@ -55,19 +55,19 @@ func TestConfigRateLimit(t *testing.T) {
 	actualConfig := &Config{}
 	err := config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client rate limit must be positive", err.Error())
+	require.Equal(t, "rateLimits.limit: must be positive", err.Error())
 
 	yamlData = testYamlData([][]string{{"burst: 3000", "burst: -3"}})
 	actualConfig = &Config{}
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client burst must be positive", err.Error())
+	require.Equal(t, "rateLimits.burst: must be positive", err.Error())
 
 	yamlData = testYamlData([][]string{{"waitTimeout: 3s", "waitTimeout: -3s"}})
 	actualConfig = &Config{}
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client wait timeout must be positive", err.Error())
+	require.Equal(t, "rateLimits.waitTimeout: must be positive", err.Error())
 }
 
 func TestConfigRetries(t *testing.T) {
@@ -75,7 +75,7 @@ func TestConfigRetries(t *testing.T) {
 	actualConfig := &Config{}
 	err := config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client max retry attempts must be positive", err.Error())
+	require.Equal(t, "retries.maxAttempts: must be positive", err.Error())
 }
 
 func TestConfigLogger(t *testing.T) {
@@ -83,44 +83,44 @@ func TestConfigLogger(t *testing.T) {
 	actualConfig := &Config{}
 	err := config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client logger slow request threshold can not be negative", err.Error())
+	require.Equal(t, "log.slowRequestThreshold: can not be negative", err.Error())
 
 	yamlData = testYamlData([][]string{{"mode: all", "mode: invalid"}})
 	actualConfig = &Config{}
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client logger invalid mode, choose one of: [none, all, failed]", err.Error())
+	require.Equal(t, "log.mode: choose one of: [none, all, failed]", err.Error())
 }
 
 func TestConfigRetriesPolicy(t *testing.T) {
-	yamlData := testYamlData([][]string{{"strategy: exponential", "strategy: invalid"}})
+	yamlData := testYamlData([][]string{{"policy: exponential", "policy: invalid"}})
 	actualConfig := &Config{}
 	err := config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client retry policy must be one of: [exponential, constant]", err.Error())
+	require.Equal(t, "retries.policy: must be one of: [exponential, constant]", err.Error())
 
 	yamlData = testYamlData([][]string{
-		{"exponentialBackoffInitialInterval: 3s", "exponentialBackoffInitialInterval: -1s"},
+		{"initialInterval: 3s", "initialInterval: -1s"},
 	})
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client exponential backoff initial interval must be positive", err.Error())
+	require.Equal(t, "retries.exponentialBackoff.initialInterval: must be positive", err.Error())
 
-	yamlData = testYamlData([][]string{{"exponentialBackoffMultiplier: 2", "exponentialBackoffMultiplier: 1"}})
+	yamlData = testYamlData([][]string{{"multiplier: 2", "multiplier: 1"}})
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client exponential backoff multiplier must be greater than 1", err.Error())
+	require.Equal(t, "retries.exponentialBackoff.multiplier: must be greater than 1", err.Error())
 
 	yamlData = testYamlData([][]string{
-		{"strategy: exponential", "strategy: constant"},
-		{"constantBackoffInterval: 2s", "constantBackoffInterval: -3s"},
+		{"policy: exponential", "policy: constant"},
+		{"interval: 2s", "interval: -3s"},
 	})
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "client constant backoff interval must be positive", err.Error())
+	require.Equal(t, "retries.constantBackoff.interval: must be positive", err.Error())
 
 	yamlData = testYamlData([][]string{
-		{"strategy: exponential", "strategy:"},
+		{"policy: exponential", "policy:"},
 	})
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.NoError(t, err)
@@ -154,17 +154,18 @@ func testYamlData(replacements [][]string) []byte {
 retries:
   enabled: true
   maxAttempts: 30
-  policy:
-    strategy: exponential
-    exponentialBackoffInitialInterval: 3s
-    exponentialBackoffMultiplier: 2
-    constantBackoffInterval: 2s
+  policy: exponential
+  exponentialBackoff:
+    initialInterval: 3s
+    multiplier: 2
+  constantBackoff:
+    interval: 2s
 rateLimits:
   enabled: true
   limit: 300
   burst: 3000
   waitTimeout: 3s
-logger:
+log:
   enabled: true
   slowRequestThreshold: 5s
   mode: all
