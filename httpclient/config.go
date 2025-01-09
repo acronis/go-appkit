@@ -33,7 +33,7 @@ const (
 	// configuration properties
 	cfgKeyRetriesEnabled                          = "retries.enabled"
 	cfgKeyRetriesMax                              = "retries.maxAttempts"
-	cfgKeyRetriesPolicyStrategy                   = "retries.policy"
+	cfgKeyRetriesPolicy                           = "retries.policy"
 	cfgKeyRetriesPolicyExponentialInitialInterval = "retries.exponentialBackoff.initialInterval"
 	cfgKeyRetriesPolicyExponentialMultiplier      = "retries.exponentialBackoff.multiplier"
 	cfgKeyRetriesPolicyConstantInternal           = "retries.constantBackoff.interval"
@@ -121,32 +121,44 @@ func (c *RateLimitConfig) TransportOpts() RateLimitingRoundTripperOpts {
 
 // PolicyConfig represents configuration options for policy retry.
 type PolicyConfig struct {
-	// Strategy is a retry policy strategy.
-	Strategy RetryPolicy
+	// Policy is a retry policy strategy.
+	Policy RetryPolicy
 
-	// ExponentialBackoffInitialInterval is the initial interval for exponential backoff.
-	ExponentialBackoffInitialInterval time.Duration
+	// ExponentialBackoff is the configuration for exponential backoff.
+	ExponentialBackoff ExponentialBackoffConfig
 
-	// ExponentialBackoffMultiplier is the multiplier for exponential backoff.
-	ExponentialBackoffMultiplier float64
+	// ConstantBackoff is the configuration for constant backoff.
+	ConstantBackoff ConstantBackoffConfig
+}
 
-	// ConstantBackoffInterval is the interval for constant backoff.
-	ConstantBackoffInterval time.Duration
+// ExponentialBackoffConfig represents configuration options for exponential backoff.
+type ExponentialBackoffConfig struct {
+	// InitialInterval is the initial interval for exponential backoff.
+	InitialInterval time.Duration
+
+	// Multiplier is the multiplier for exponential backoff.
+	Multiplier float64
+}
+
+// ConstantBackoffConfig represents configuration options for constant backoff.
+type ConstantBackoffConfig struct {
+	// Interval is the interval for constant backoff.
+	Interval time.Duration
 }
 
 // Set is part of config interface implementation.
 func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
-	strategy, err := dp.GetString(cfgKeyRetriesPolicyStrategy)
+	policy, err := dp.GetString(cfgKeyRetriesPolicy)
 	if err != nil {
 		return err
 	}
-	c.Strategy = RetryPolicy(strategy)
+	c.Policy = RetryPolicy(policy)
 
-	if c.Strategy != "" && c.Strategy != RetryPolicyExponential && c.Strategy != RetryPolicyConstant {
-		return dp.WrapKeyErr(cfgKeyRetriesPolicyStrategy, errors.New("must be one of: [exponential, constant]"))
+	if c.Policy != "" && c.Policy != RetryPolicyExponential && c.Policy != RetryPolicyConstant {
+		return dp.WrapKeyErr(cfgKeyRetriesPolicy, errors.New("must be one of: [exponential, constant]"))
 	}
 
-	if c.Strategy == RetryPolicyExponential {
+	if c.Policy == RetryPolicyExponential {
 		var interval time.Duration
 		interval, err = dp.GetDuration(cfgKeyRetriesPolicyExponentialInitialInterval)
 		if err != nil {
@@ -155,7 +167,6 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 		if interval < 0 {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialInitialInterval, errors.New("must be positive"))
 		}
-		c.ExponentialBackoffInitialInterval = interval
 
 		var multiplier float64
 		multiplier, err = dp.GetFloat64(cfgKeyRetriesPolicyExponentialMultiplier)
@@ -165,10 +176,14 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 		if multiplier <= 1 {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialMultiplier, errors.New("must be greater than 1"))
 		}
-		c.ExponentialBackoffMultiplier = multiplier
+
+		c.ExponentialBackoff = ExponentialBackoffConfig{
+			InitialInterval: interval,
+			Multiplier:      multiplier,
+		}
 
 		return nil
-	} else if c.Strategy == RetryPolicyConstant {
+	} else if c.Policy == RetryPolicyConstant {
 		var interval time.Duration
 		interval, err = dp.GetDuration(cfgKeyRetriesPolicyConstantInternal)
 		if err != nil {
@@ -177,7 +192,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 		if interval < 0 {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyConstantInternal, errors.New("must be positive"))
 		}
-		c.ConstantBackoffInterval = interval
+		c.ConstantBackoff = ConstantBackoffConfig{Interval: interval}
 	}
 
 	return nil
@@ -200,17 +215,17 @@ type RetriesConfig struct {
 
 // GetPolicy returns a retry policy based on strategy or nil if none is provided.
 func (c *RetriesConfig) GetPolicy() retry.Policy {
-	if c.Policy.Strategy == RetryPolicyExponential {
+	if c.Policy.Policy == RetryPolicyExponential {
 		return retry.PolicyFunc(func() backoff.BackOff {
 			bf := backoff.NewExponentialBackOff()
-			bf.InitialInterval = c.Policy.ExponentialBackoffInitialInterval
-			bf.Multiplier = c.Policy.ExponentialBackoffMultiplier
+			bf.InitialInterval = c.Policy.ExponentialBackoff.InitialInterval
+			bf.Multiplier = c.Policy.ExponentialBackoff.Multiplier
 			bf.Reset()
 			return bf
 		})
-	} else if c.Policy.Strategy == RetryPolicyConstant {
+	} else if c.Policy.Policy == RetryPolicyConstant {
 		return retry.PolicyFunc(func() backoff.BackOff {
-			bf := backoff.NewConstantBackOff(c.Policy.ConstantBackoffInterval)
+			bf := backoff.NewConstantBackOff(c.Policy.ConstantBackoff.Interval)
 			bf.Reset()
 			return bf
 		})

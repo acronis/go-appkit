@@ -138,9 +138,11 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Retries.Enabled = true
 	cfg.Retries.MaxAttempts = 1
-	cfg.Retries.Policy.Strategy = RetryPolicyExponential
-	cfg.Retries.Policy.ExponentialBackoffInitialInterval = 2 * time.Millisecond
-	cfg.Retries.Policy.ExponentialBackoffMultiplier = 1.1
+	cfg.Retries.Policy.Policy = RetryPolicyExponential
+	cfg.Retries.Policy.ExponentialBackoff = ExponentialBackoffConfig{
+		InitialInterval: 2 * time.Millisecond,
+		Multiplier:      1.1,
+	}
 
 	client := MustWithOpts(cfg, Opts{
 		UserAgent: "test-agent",

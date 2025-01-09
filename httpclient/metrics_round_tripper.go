@@ -31,6 +31,7 @@ type PrometheusMetricsCollector struct {
 	Durations *prometheus.HistogramVec
 }
 
+// NewPrometheusMetricsCollector creates a new Prometheus metrics collector.
 func NewPrometheusMetricsCollector(namespace string) *PrometheusMetricsCollector {
 	return &PrometheusMetricsCollector{
 		Durations: prometheus.NewHistogramVec(prometheus.HistogramOpts{

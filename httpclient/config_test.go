@@ -27,9 +27,11 @@ func TestConfigWithLoader(t *testing.T) {
 			Enabled:     true,
 			MaxAttempts: 30,
 			Policy: PolicyConfig{
-				Strategy:                          RetryPolicyExponential,
-				ExponentialBackoffInitialInterval: 3 * time.Second,
-				ExponentialBackoffMultiplier:      2,
+				Policy: RetryPolicyExponential,
+				ExponentialBackoff: ExponentialBackoffConfig{
+					InitialInterval: 3 * time.Second,
+					Multiplier:      2,
+				},
 			},
 		},
 		RateLimits: RateLimitConfig{
