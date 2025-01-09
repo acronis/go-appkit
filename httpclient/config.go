@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// RetryPolicy represents a retry policy strategy.
+type RetryPolicy string
+
 const (
 	// DefaultReqType is a default request type.
 	DefaultReqType = "go-appkit"
@@ -22,10 +25,10 @@ const (
 	DefaultClientWaitTimeout = 10 * time.Second
 
 	// RetryPolicyExponential is a policy for exponential retries.
-	RetryPolicyExponential = "exponential"
+	RetryPolicyExponential RetryPolicy = "exponential"
 
 	// RetryPolicyConstant is a policy for constant retries.
-	RetryPolicyConstant = "constant"
+	RetryPolicyConstant RetryPolicy = "constant"
 
 	// configuration properties
 	cfgKeyRetriesEnabled                          = "retries.enabled"
@@ -118,8 +121,8 @@ func (c *RateLimitConfig) TransportOpts() RateLimitingRoundTripperOpts {
 
 // PolicyConfig represents configuration options for policy retry.
 type PolicyConfig struct {
-	// Strategy is a strategy for retry policy.
-	Strategy string
+	// Strategy is a retry policy strategy.
+	Strategy RetryPolicy
 
 	// ExponentialBackoffInitialInterval is the initial interval for exponential backoff.
 	ExponentialBackoffInitialInterval time.Duration
@@ -137,7 +140,7 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 	if err != nil {
 		return err
 	}
-	c.Strategy = strategy
+	c.Strategy = RetryPolicy(strategy)
 
 	if c.Strategy != "" && c.Strategy != RetryPolicyExponential && c.Strategy != RetryPolicyConstant {
 		return dp.WrapKeyErr(cfgKeyRetriesPolicyStrategy, errors.New("must be one of: [exponential, constant]"))

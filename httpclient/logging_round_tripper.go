@@ -133,14 +133,16 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 			loggerAtLevel = logger.Errorf
 		}
 
+		requestID := middleware.GetRequestIDFromContext(ctx)
+		if requestID != "" {
+			message += " request id %s "
+			args = append(args, requestID)
+		}
+
 		loggerAtLevel(message, args...)
 		loggingParams := middleware.GetLoggingParamsFromContext(ctx)
 		if loggingParams != nil {
 			loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.ReqType), elapsed)
-			requestID := middleware.GetRequestIDFromContext(ctx)
-			if requestID != "" {
-				loggingParams.ExtendFields(log.String("request_id", requestID))
-			}
 		}
 	}
 

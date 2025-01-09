@@ -8,6 +8,7 @@ package httpclient
 
 import (
 	"context"
+	"fmt"
 	"github.com/acronis/go-appkit/httpserver/middleware"
 	"github.com/acronis/go-appkit/log/logtest"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,7 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
-	client, err := New(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
+	client, err := New(cfg)
 	require.NoError(t, err)
 
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -37,9 +38,10 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
-
-	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
+	require.Contains(
+		t, logger.Entries()[0].Text,
+		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultReqType),
+	)
 }
 
 func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
@@ -51,7 +53,7 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	logger := logtest.NewRecorder()
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
-	client := Must(cfg, "test-agent", "test-request", nil, ClientProviders{}, nil)
+	client := Must(cfg)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
@@ -60,9 +62,10 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
-
-	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "client http request POST "+server.URL+" req type test-request status code 418")
+	require.Contains(
+		t, logger.Entries()[0].Text,
+		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultReqType),
+	)
 }
 
 func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
@@ -88,6 +91,11 @@ func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
+	require.Contains(
+		t, logger.Entries()[0].Text, fmt.Sprintf(
+			"client http request POST %s req type test-request status code 418", server.URL,
+		),
+	)
 }
 
 func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
@@ -112,6 +120,11 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
+	require.Contains(
+		t, logger.Entries()[0].Text, fmt.Sprintf(
+			"client http request POST %s req type test-request status code 418", server.URL,
+		),
+	)
 }
 
 func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {

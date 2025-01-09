@@ -32,43 +32,17 @@ func CloneHTTPHeader(in http.Header) http.Header {
 	return out
 }
 
-// ClientProviders for further customization of the client logging and request id.
-type ClientProviders struct {
-	// Logger is a function that provides a context-specific logger.
-	Logger func(ctx context.Context) log.FieldLogger
-
-	// RequestID is a function that provides a request ID.
-	RequestID func(ctx context.Context) string
-}
-
-// New wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
+// New wraps delegate transports with logging, rate limiting, retryable, request id
 // and returns an error if any occurs.
-func New(
-	cfg *Config,
-	userAgent string,
-	reqType string,
-	delegate http.RoundTripper,
-	providers ClientProviders,
-	collector MetricsCollector,
-) (*http.Client, error) {
+func New(cfg *Config) (*http.Client, error) {
 	var err error
+	var delegate http.RoundTripper
 
-	if delegate == nil {
-		delegate = http.DefaultTransport.(*http.Transport).Clone()
-	}
+	delegate = http.DefaultTransport.(*http.Transport).Clone()
 
 	if cfg.Log.Enabled {
 		opts := cfg.Log.TransportOpts()
-		opts.LoggerProvider = providers.Logger
-		opts.ReqType = reqType
 		delegate = NewLoggingRoundTripperWithOpts(delegate, opts)
-	}
-
-	if cfg.Metrics.Enabled {
-		delegate = NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{
-			ReqType:   reqType,
-			Collector: collector,
-		})
 	}
 
 	if cfg.RateLimits.Enabled {
@@ -80,17 +54,10 @@ func New(
 		}
 	}
 
-	if userAgent != "" {
-		delegate = NewUserAgentRoundTripper(delegate, userAgent)
-	}
-
-	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{
-		RequestIDProvider: providers.RequestID,
-	})
+	delegate = NewRequestIDRoundTripper(delegate)
 
 	if cfg.Retries.Enabled {
 		opts := cfg.Retries.TransportOpts()
-		opts.LoggerProvider = providers.Logger
 		opts.BackoffPolicy = cfg.Retries.GetPolicy()
 		delegate, err = NewRetryableRoundTripperWithOpts(delegate, opts)
 		if err != nil {
@@ -101,17 +68,10 @@ func New(
 	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
 }
 
-// Must wraps delegate transports with logging, metrics, rate limiting, retryable, user agent, request id
+// Must wraps delegate transports with logging, rate limiting, retryable, request id
 // and panics if any error occurs.
-func Must(
-	cfg *Config,
-	userAgent string,
-	reqType string,
-	delegate http.RoundTripper,
-	providers ClientProviders,
-	collector MetricsCollector,
-) *http.Client {
-	client, err := New(cfg, userAgent, reqType, delegate, providers, collector)
+func Must(cfg *Config) *http.Client {
+	client, err := New(cfg)
 	if err != nil {
 		panic(err)
 	}
@@ -130,8 +90,11 @@ type Opts struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// Providers are the functions that provide a context-specific logger and request ID.
-	Providers ClientProviders
+	// LoggerProvider is a function that provides a context-specific logger.
+	LoggerProvider func(ctx context.Context) log.FieldLogger
+
+	// RequestIDProvider is a function that provides a request ID.
+	RequestIDProvider func(ctx context.Context) string
 
 	// Collector is a metrics collector.
 	Collector MetricsCollector
@@ -141,12 +104,65 @@ type Opts struct {
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and returns an error if any occurs.
 func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
-	return New(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers, opts.Collector)
+	var err error
+	delegate := opts.Delegate
+
+	if delegate == nil {
+		delegate = http.DefaultTransport.(*http.Transport).Clone()
+	}
+
+	if cfg.Log.Enabled {
+		logOpts := cfg.Log.TransportOpts()
+		logOpts.LoggerProvider = opts.LoggerProvider
+		logOpts.ReqType = opts.ReqType
+		delegate = NewLoggingRoundTripperWithOpts(delegate, logOpts)
+	}
+
+	if cfg.Metrics.Enabled {
+		delegate = NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{
+			ReqType:   opts.ReqType,
+			Collector: opts.Collector,
+		})
+	}
+
+	if cfg.RateLimits.Enabled {
+		delegate, err = NewRateLimitingRoundTripperWithOpts(
+			delegate, cfg.RateLimits.Limit, cfg.RateLimits.TransportOpts(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("create rate limiting round tripper: %w", err)
+		}
+	}
+
+	if opts.ReqType != "" {
+		delegate = NewUserAgentRoundTripper(delegate, opts.ReqType)
+	}
+
+	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{
+		RequestIDProvider: opts.RequestIDProvider,
+	})
+
+	if cfg.Retries.Enabled {
+		retryOpts := cfg.Retries.TransportOpts()
+		retryOpts.LoggerProvider = opts.LoggerProvider
+		retryOpts.BackoffPolicy = cfg.Retries.GetPolicy()
+		delegate, err = NewRetryableRoundTripperWithOpts(delegate, retryOpts)
+		if err != nil {
+			return nil, fmt.Errorf("create retryable round tripper: %w", err)
+		}
+	}
+
+	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
 }
 
 // MustWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and panics if any error occurs.
 func MustWithOpts(cfg *Config, opts Opts) *http.Client {
-	return Must(cfg, opts.UserAgent, opts.ReqType, opts.Delegate, opts.Providers, opts.Collector)
+	client, err := NewWithOpts(cfg, opts)
+	if err != nil {
+		panic(err)
+	}
+
+	return client
 }
