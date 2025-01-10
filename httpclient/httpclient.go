@@ -36,7 +36,7 @@ type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
-	// ClientType is a target service. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
 	// Delegate is the next RoundTripper in the chain.

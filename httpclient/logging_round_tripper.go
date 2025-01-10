@@ -38,10 +38,10 @@ type LoggingRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// ClientType is a target service. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
-	// Mode of logging: all or failed.
+	// Mode of logging: [all, failed].
 	Mode LoggingMode
 
 	// SlowRequestThreshold is a threshold for slow requests.
@@ -54,10 +54,10 @@ type LoggingRoundTripper struct {
 
 // LoggingRoundTripperOpts represents an options for LoggingRoundTripper.
 type LoggingRoundTripperOpts struct {
-	// ClientType is a target service. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
-	// Mode of logging: all or failed.
+	// Mode of logging: [all, failed].
 	Mode LoggingMode
 
 	// SlowRequestThreshold is a threshold for slow requests.

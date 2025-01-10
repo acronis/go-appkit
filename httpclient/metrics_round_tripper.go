@@ -59,7 +59,7 @@ type MetricsRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// ClientType is a target service. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
 	// Collector is a metrics collector.
@@ -71,7 +71,7 @@ type MetricsRoundTripper struct {
 
 // MetricsRoundTripperOpts is an HTTP transport that measures requests done.
 type MetricsRoundTripperOpts struct {
-	// ClientType is a target service. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
 	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
