@@ -8,19 +8,18 @@ package httpclient
 
 import (
 	"errors"
+	"time"
+
+	"github.com/cenkalti/backoff/v4"
+
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/retry"
-	"github.com/cenkalti/backoff/v4"
-	"time"
 )
 
 // RetryPolicy represents a retry policy strategy.
 type RetryPolicy string
 
 const (
-	// DefaultRequestType is a default request type.
-	DefaultRequestType = "go-appkit"
-
 	// DefaultClientWaitTimeout is a default timeout for a client to wait for a request.
 	DefaultClientWaitTimeout = 10 * time.Second
 
@@ -119,18 +118,6 @@ func (c *RateLimitsConfig) TransportOpts() RateLimitingRoundTripperOpts {
 	}
 }
 
-// PolicyConfig represents configuration options for policy retry.
-type PolicyConfig struct {
-	// Policy is a retry policy strategy.
-	Policy RetryPolicy
-
-	// ExponentialBackoff is the configuration for exponential backoff.
-	ExponentialBackoff ExponentialBackoffConfig
-
-	// ConstantBackoff is the configuration for constant backoff.
-	ConstantBackoff ConstantBackoffConfig
-}
-
 // ExponentialBackoffConfig represents configuration options for exponential backoff.
 type ExponentialBackoffConfig struct {
 	// InitialInterval is the initial interval for exponential backoff.
@@ -146,8 +133,79 @@ type ConstantBackoffConfig struct {
 	Interval time.Duration
 }
 
+// RetriesConfig represents configuration options for HTTP client retries policy.
+type RetriesConfig struct {
+	// Enabled is a flag that enables retries.
+	Enabled bool
+
+	// MaxAttempts is the maximum number of attempts to retry the request.
+	MaxAttempts int
+
+	// Policy of a retry: [exponential, constant]. default is exponential.
+	Policy RetryPolicy
+
+	// ExponentialBackoff is the configuration for exponential backoff.
+	ExponentialBackoff ExponentialBackoffConfig
+
+	// ConstantBackoff is the configuration for constant backoff.
+	ConstantBackoff ConstantBackoffConfig
+}
+
+// GetPolicy returns a retry policy based on strategy or nil if none is provided.
+func (c *RetriesConfig) GetPolicy() retry.Policy {
+	if c.Policy == RetryPolicyExponential {
+		return retry.PolicyFunc(func() backoff.BackOff {
+			bf := backoff.NewExponentialBackOff()
+			bf.InitialInterval = c.ExponentialBackoff.InitialInterval
+			bf.Multiplier = c.ExponentialBackoff.Multiplier
+			bf.Reset()
+			return bf
+		})
+	} else if c.Policy == RetryPolicyConstant {
+		return retry.PolicyFunc(func() backoff.BackOff {
+			bf := backoff.NewConstantBackOff(c.ConstantBackoff.Interval)
+			bf.Reset()
+			return bf
+		})
+	}
+
+	return nil
+}
+
 // Set is part of config interface implementation.
-func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
+func (c *RetriesConfig) Set(dp config.DataProvider) error {
+	enabled, err := dp.GetBool(cfgKeyRetriesEnabled)
+	if err != nil {
+		return err
+	}
+	c.Enabled = enabled
+
+	if !c.Enabled {
+		return nil
+	}
+
+	maxAttempts, err := dp.GetInt(cfgKeyRetriesMax)
+	if err != nil {
+		return err
+	}
+	if maxAttempts < 0 {
+		return dp.WrapKeyErr(cfgKeyRetriesMax, errors.New("must be positive"))
+	}
+	c.MaxAttempts = maxAttempts
+
+	return c.setPolicy(dp)
+}
+
+// SetProviderDefaults is part of config interface implementation.
+func (c *RetriesConfig) SetProviderDefaults(_ config.DataProvider) {}
+
+// TransportOpts returns transport options.
+func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
+	return RetryableRoundTripperOpts{MaxRetryAttempts: c.MaxAttempts}
+}
+
+// setPolicy sets the policy based on the configuration.
+func (c *RetriesConfig) setPolicy(dp config.DataProvider) error {
 	policy, err := dp.GetString(cfgKeyRetriesPolicy)
 	if err != nil {
 		return err
@@ -196,79 +254,6 @@ func (c *PolicyConfig) Set(dp config.DataProvider) (err error) {
 	}
 
 	return nil
-}
-
-// SetProviderDefaults is part of config interface implementation.
-func (c *PolicyConfig) SetProviderDefaults(_ config.DataProvider) {}
-
-// RetriesConfig represents configuration options for HTTP client retries policy.
-type RetriesConfig struct {
-	// Enabled is a flag that enables retries.
-	Enabled bool
-
-	// MaxAttempts is the maximum number of attempts to retry the request.
-	MaxAttempts int
-
-	// Policy of a retry: [exponential, constant]. default is exponential.
-	Policy PolicyConfig
-}
-
-// GetPolicy returns a retry policy based on strategy or nil if none is provided.
-func (c *RetriesConfig) GetPolicy() retry.Policy {
-	if c.Policy.Policy == RetryPolicyExponential {
-		return retry.PolicyFunc(func() backoff.BackOff {
-			bf := backoff.NewExponentialBackOff()
-			bf.InitialInterval = c.Policy.ExponentialBackoff.InitialInterval
-			bf.Multiplier = c.Policy.ExponentialBackoff.Multiplier
-			bf.Reset()
-			return bf
-		})
-	} else if c.Policy.Policy == RetryPolicyConstant {
-		return retry.PolicyFunc(func() backoff.BackOff {
-			bf := backoff.NewConstantBackOff(c.Policy.ConstantBackoff.Interval)
-			bf.Reset()
-			return bf
-		})
-	}
-
-	return nil
-}
-
-// Set is part of config interface implementation.
-func (c *RetriesConfig) Set(dp config.DataProvider) error {
-	enabled, err := dp.GetBool(cfgKeyRetriesEnabled)
-	if err != nil {
-		return err
-	}
-	c.Enabled = enabled
-
-	if !c.Enabled {
-		return nil
-	}
-
-	maxAttempts, err := dp.GetInt(cfgKeyRetriesMax)
-	if err != nil {
-		return err
-	}
-	if maxAttempts < 0 {
-		return dp.WrapKeyErr(cfgKeyRetriesMax, errors.New("must be positive"))
-	}
-	c.MaxAttempts = maxAttempts
-
-	err = c.Policy.Set(config.NewKeyPrefixedDataProvider(dp, ""))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// SetProviderDefaults is part of config interface implementation.
-func (c *RetriesConfig) SetProviderDefaults(_ config.DataProvider) {}
-
-// TransportOpts returns transport options.
-func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
-	return RetryableRoundTripperOpts{MaxRetryAttempts: c.MaxAttempts}
 }
 
 // LogConfig represents configuration options for HTTP client logs.

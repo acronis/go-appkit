@@ -9,10 +9,11 @@ package httpclient
 import (
 	"context"
 	"fmt"
-	"github.com/acronis/go-appkit/httpserver/middleware"
-	"github.com/acronis/go-appkit/log"
 	"net/http"
 	"time"
+
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
 )
 
 // LoggingMode represents a mode of logging.
@@ -37,8 +38,8 @@ type LoggingRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	RequestType string
+	// ClientType is a target service. e.g. 'auth-service'
+	ClientType string
 
 	// Mode of logging: all or failed.
 	Mode LoggingMode
@@ -53,8 +54,8 @@ type LoggingRoundTripper struct {
 
 // LoggingRoundTripperOpts represents an options for LoggingRoundTripper.
 type LoggingRoundTripperOpts struct {
-	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	RequestType string
+	// ClientType is a target service. e.g. 'auth-service'
+	ClientType string
 
 	// Mode of logging: all or failed.
 	Mode LoggingMode
@@ -69,23 +70,16 @@ type LoggingRoundTripperOpts struct {
 
 // NewLoggingRoundTripper creates an HTTP transport that log requests.
 func NewLoggingRoundTripper(delegate http.RoundTripper) http.RoundTripper {
-	return NewLoggingRoundTripperWithOpts(delegate, LoggingRoundTripperOpts{
-		RequestType: DefaultRequestType,
-	})
+	return NewLoggingRoundTripperWithOpts(delegate, LoggingRoundTripperOpts{})
 }
 
 // NewLoggingRoundTripperWithOpts creates an HTTP transport that log requests with options.
 func NewLoggingRoundTripperWithOpts(
 	delegate http.RoundTripper, opts LoggingRoundTripperOpts,
 ) http.RoundTripper {
-	requestType := opts.RequestType
-	if requestType == "" {
-		requestType = DefaultRequestType
-	}
-
 	return &LoggingRoundTripper{
 		Delegate:             delegate,
-		RequestType:          requestType,
+		ClientType:           opts.ClientType,
 		Mode:                 opts.Mode,
 		SlowRequestThreshold: opts.SlowRequestThreshold,
 		LoggerProvider:       opts.LoggerProvider,
@@ -112,8 +106,8 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 	start := time.Now()
 	resp, err := rt.Delegate.RoundTrip(r)
 	elapsed := time.Since(start)
-	common := "client http request %s %s req type %s "
-	args := []interface{}{r.Method, r.URL.String(), rt.RequestType, elapsed.Seconds(), err}
+	common := "client http request %s %s "
+	args := []interface{}{r.Method, r.URL.String(), elapsed.Seconds(), err}
 	message := common + "time taken %.3f, err %+v"
 	loggerAtLevel := logger.Infof
 
@@ -126,7 +120,7 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 			return resp, err
 		}
 
-		args = []interface{}{r.Method, r.URL.String(), rt.RequestType, resp.StatusCode, elapsed.Seconds(), err}
+		args = []interface{}{r.Method, r.URL.String(), resp.StatusCode, elapsed.Seconds(), err}
 		message = common + "status code %d, time taken %.3f, err %+v"
 	}
 
@@ -136,6 +130,11 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		loggerAtLevel = logger.Warnf
 	}
 
+	if rt.ClientType != "" {
+		message += " client type %s "
+		args = append(args, rt.ClientType)
+	}
+
 	requestID := r.Header.Get("X-Request-ID")
 	if requestID != "" {
 		message += " request id %s "
@@ -143,9 +142,10 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 	}
 
 	loggerAtLevel(message, args...)
+
 	loggingParams := middleware.GetLoggingParamsFromContext(ctx)
 	if loggingParams != nil {
-		loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.RequestType), elapsed)
+		loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.ClientType), elapsed)
 	}
 
 	return resp, err

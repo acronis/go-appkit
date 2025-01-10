@@ -8,11 +8,13 @@ package httpclient
 
 import (
 	"context"
-	"github.com/acronis/go-appkit/httpserver/middleware"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/acronis/go-appkit/httpserver/middleware"
 )
 
 func TestNewRequestIDRoundTripper(t *testing.T) {

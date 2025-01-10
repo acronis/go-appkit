@@ -9,15 +9,17 @@ package httpclient
 import (
 	"context"
 	"fmt"
-	"github.com/acronis/go-appkit/httpserver/middleware"
-	"github.com/acronis/go-appkit/log"
-	"github.com/acronis/go-appkit/log/logtest"
-	"github.com/stretchr/testify/require"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log"
+	"github.com/acronis/go-appkit/log/logtest"
 )
 
 func TestNewLoggingRoundTripper(t *testing.T) {
@@ -41,7 +43,7 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	loggerEntry := logger.Entries()[0]
 	require.Contains(
 		t, loggerEntry.Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
+		fmt.Sprintf("client http request POST %s", server.URL),
 	)
 }
 
@@ -59,16 +61,12 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
 
-	r, err := client.Do(req)
+	r, err := client.Do(req) // nolint:bodyclose
 	require.Error(t, err)
 	require.Nil(t, r)
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(
-		t, loggerEntry.Text,
-		fmt.Sprintf("client http request POST %s req type %s", serverURL, DefaultRequestType),
-	)
 	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String()+": connect: connection refused")
 	require.NotContains(t, loggerEntry.Text, "status code")
 }
@@ -86,7 +84,7 @@ func TestMustHTTPClientLoggingRoundTripperDisabled(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
 
-	r, err := client.Do(req)
+	r, err := client.Do(req) // nolint:bodyclose
 	require.Error(t, err)
 	require.Nil(t, r)
 	require.Empty(t, logger.Entries())
@@ -104,8 +102,8 @@ func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
 
 	var loggerProviderCalled bool
 	client := MustWithOpts(cfg, Opts{
-		UserAgent:   "test-agent",
-		RequestType: "test-request",
+		UserAgent:  "test-agent",
+		ClientType: "test-client-type",
 		LoggerProvider: func(ctx context.Context) log.FieldLogger {
 			loggerProviderCalled = true
 			return logger
@@ -116,7 +114,7 @@ func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, serverURL, nil)
 	require.NoError(t, err)
 
-	r, err := client.Do(req)
+	r, err := client.Do(req) // nolint:bodyclose
 	require.Error(t, err)
 	require.Nil(t, r)
 	require.True(t, loggerProviderCalled)

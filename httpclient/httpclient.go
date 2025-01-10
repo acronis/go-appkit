@@ -9,28 +9,10 @@ package httpclient
 import (
 	"context"
 	"fmt"
-	"github.com/acronis/go-appkit/log"
 	"net/http"
+
+	"github.com/acronis/go-appkit/log"
 )
-
-// CloneHTTPRequest creates a shallow copy of the request along with a deep copy of the Headers.
-func CloneHTTPRequest(req *http.Request) *http.Request {
-	r := new(http.Request)
-	*r = *req
-	r.Header = CloneHTTPHeader(req.Header)
-	return r
-}
-
-// CloneHTTPHeader creates a deep copy of an http.Header.
-func CloneHTTPHeader(in http.Header) http.Header {
-	out := make(http.Header, len(in))
-	for key, values := range in {
-		newValues := make([]string, len(values))
-		copy(newValues, values)
-		out[key] = newValues
-	}
-	return out
-}
 
 // New wraps delegate transports with logging, rate limiting, retryable, request id
 // and returns an error if any occurs.
@@ -54,8 +36,8 @@ type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
-	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	RequestType string
+	// ClientType is a target service. e.g. 'auth-service'
+	ClientType string
 
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
@@ -74,25 +56,15 @@ type Opts struct {
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and returns an error if any occurs.
 func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config must be provided")
+	}
+
 	var err error
 	delegate := opts.Delegate
 
 	if delegate == nil {
 		delegate = http.DefaultTransport.(*http.Transport).Clone()
-	}
-
-	if cfg.Log.Enabled {
-		logOpts := cfg.Log.TransportOpts()
-		logOpts.LoggerProvider = opts.LoggerProvider
-		logOpts.RequestType = opts.RequestType
-		delegate = NewLoggingRoundTripperWithOpts(delegate, logOpts)
-	}
-
-	if cfg.Metrics.Enabled {
-		delegate = NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{
-			RequestType: opts.RequestType,
-			Collector:   opts.Collector,
-		})
 	}
 
 	if cfg.RateLimits.Enabled {
@@ -120,6 +92,19 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create retryable round tripper: %w", err)
 		}
+	}
+
+	if cfg.Metrics.Enabled {
+		delegate = NewMetricsRoundTripperWithOpts(delegate, opts.Collector, MetricsRoundTripperOpts{
+			ClientType: opts.ClientType,
+		})
+	}
+
+	if cfg.Log.Enabled {
+		logOpts := cfg.Log.TransportOpts()
+		logOpts.LoggerProvider = opts.LoggerProvider
+		logOpts.ClientType = opts.ClientType
+		delegate = NewLoggingRoundTripperWithOpts(delegate, logOpts)
 	}
 
 	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil

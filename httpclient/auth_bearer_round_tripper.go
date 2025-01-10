@@ -70,7 +70,7 @@ func (rt *AuthBearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	if err != nil {
 		return nil, &AuthBearerRoundTripperError{Inner: err}
 	}
-	req = CloneHTTPRequest(req) // Per RoundTripper contract.
+	req = req.Clone(req.Context()) // Per RoundTripper contract.
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 	return rt.Delegate.RoundTrip(req)
 }

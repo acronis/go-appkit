@@ -8,15 +8,11 @@ package httpclient
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"strconv"
 	"time"
-)
 
-var (
-	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
-	ClassifyRequest func(r *http.Request, requestType string) string
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // MetricsCollector is an interface for collecting metrics for client requests.
@@ -39,7 +35,7 @@ func NewPrometheusMetricsCollector(namespace string) *PrometheusMetricsCollector
 			Name:      "http_client_request_duration_seconds",
 			Help:      "A histogram of the http client requests durations.",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150, 300, 600},
-		}, []string{"type", "remote_address", "summary", "status"}),
+		}, []string{"client_type", "remote_address", "summary", "status"}),
 	}
 }
 
@@ -63,35 +59,42 @@ type MetricsRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	RequestType string
+	// ClientType is a target service. e.g. 'auth-service'
+	ClientType string
 
 	// Collector is a metrics collector.
 	Collector MetricsCollector
+
+	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
+	ClassifyRequest func(r *http.Request, requestType string) string
 }
 
 // MetricsRoundTripperOpts is an HTTP transport that measures requests done.
 type MetricsRoundTripperOpts struct {
-	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	RequestType string
+	// ClientType is a target service. e.g. 'auth-service'
+	ClientType string
 
-	// Collector is a metrics collector.
-	Collector MetricsCollector
+	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
+	ClassifyRequest func(r *http.Request, requestType string) string
 }
 
 // NewMetricsRoundTripper creates an HTTP transport that measures requests done.
-func NewMetricsRoundTripper(delegate http.RoundTripper) http.RoundTripper {
-	return NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{})
+func NewMetricsRoundTripper(delegate http.RoundTripper, collector MetricsCollector) http.RoundTripper {
+	return NewMetricsRoundTripperWithOpts(delegate, collector, MetricsRoundTripperOpts{})
 }
 
 // NewMetricsRoundTripperWithOpts creates an HTTP transport that measures requests done.
-func NewMetricsRoundTripperWithOpts(delegate http.RoundTripper, opts MetricsRoundTripperOpts) http.RoundTripper {
-	requestType := DefaultRequestType
-	if opts.RequestType == "" {
-		requestType = opts.RequestType
+func NewMetricsRoundTripperWithOpts(
+	delegate http.RoundTripper,
+	collector MetricsCollector,
+	opts MetricsRoundTripperOpts,
+) http.RoundTripper {
+	return &MetricsRoundTripper{
+		Delegate:        delegate,
+		ClientType:      opts.ClientType,
+		Collector:       collector,
+		ClassifyRequest: opts.ClassifyRequest,
 	}
-
-	return &MetricsRoundTripper{Delegate: delegate, RequestType: requestType, Collector: opts.Collector}
 }
 
 // RoundTrip measures external requests done.
@@ -108,15 +111,11 @@ func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		status = strconv.Itoa(resp.StatusCode)
 	}
 
-	rt.Collector.RequestDuration(rt.RequestType, r.Host, requestSummary(r, rt.RequestType), status, start)
-	return resp, err
-}
-
-// requestSummary does request classification, producing non-parameterized summary for given request.
-func requestSummary(r *http.Request, requestType string) string {
-	if ClassifyRequest != nil {
-		return ClassifyRequest(r, requestType)
+	summary := fmt.Sprintf("%s %s", r.Method, rt.ClientType)
+	if rt.ClassifyRequest != nil {
+		summary = rt.ClassifyRequest(r, rt.ClientType)
 	}
 
-	return fmt.Sprintf("%s %s", r.Method, requestType)
+	rt.Collector.RequestDuration(rt.ClientType, r.Host, summary, status, start)
+	return resp, err
 }

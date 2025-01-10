@@ -8,12 +8,14 @@ package httpclient
 
 import (
 	"bytes"
-	"github.com/acronis/go-appkit/config"
-	"github.com/acronis/go-appkit/retry"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/acronis/go-appkit/config"
+	"github.com/acronis/go-appkit/retry"
 )
 
 func TestConfigWithLoader(t *testing.T) {
@@ -26,12 +28,10 @@ func TestConfigWithLoader(t *testing.T) {
 		Retries: RetriesConfig{
 			Enabled:     true,
 			MaxAttempts: 30,
-			Policy: PolicyConfig{
-				Policy: RetryPolicyExponential,
-				ExponentialBackoff: ExponentialBackoffConfig{
-					InitialInterval: 3 * time.Second,
-					Multiplier:      2,
-				},
+			Policy:      RetryPolicyExponential,
+			ExponentialBackoff: ExponentialBackoffConfig{
+				InitialInterval: 3 * time.Second,
+				Multiplier:      2,
 			},
 		},
 		RateLimits: RateLimitsConfig{

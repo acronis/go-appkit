@@ -9,13 +9,15 @@ package httpclient
 import (
 	"context"
 	"fmt"
-	"github.com/acronis/go-appkit/httpserver/middleware"
-	"github.com/acronis/go-appkit/log/logtest"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/log/logtest"
 )
 
 func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
@@ -38,10 +40,6 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
-	require.Contains(
-		t, logger.Entries()[0].Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
-	)
 }
 
 func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
@@ -62,10 +60,6 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
-	require.Contains(
-		t, logger.Entries()[0].Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
-	)
 }
 
 func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
@@ -78,8 +72,8 @@ func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
 	client, err := NewWithOpts(cfg, Opts{
-		UserAgent:   "test-agent",
-		RequestType: "test-request",
+		UserAgent:  "test-agent",
+		ClientType: "test-client-type",
 	})
 	require.NoError(t, err)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -92,7 +86,7 @@ func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 	require.Contains(
 		t, logger.Entries()[0].Text, fmt.Sprintf(
-			"client http request POST %s req type test-request status code 418", server.URL,
+			"client http request POST %s status code 418", server.URL,
 		),
 	)
 }
@@ -107,8 +101,8 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
 	client := MustWithOpts(cfg, Opts{
-		UserAgent:   "test-agent",
-		RequestType: "test-request",
+		UserAgent:  "test-agent",
+		ClientType: "test-client-type",
 	})
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
@@ -119,10 +113,9 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, logger.Entries())
 	require.Contains(
-		t, logger.Entries()[0].Text, fmt.Sprintf(
-			"client http request POST %s req type test-request status code 418", server.URL,
-		),
+		t, logger.Entries()[0].Text, fmt.Sprintf("client http request POST %s status code 418", server.URL),
 	)
+	require.Contains(t, logger.Entries()[0].Text, "client type test-client-type")
 }
 
 func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
@@ -136,15 +129,15 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Retries.Enabled = true
 	cfg.Retries.MaxAttempts = 1
-	cfg.Retries.Policy.Policy = RetryPolicyExponential
-	cfg.Retries.Policy.ExponentialBackoff = ExponentialBackoffConfig{
+	cfg.Retries.Policy = RetryPolicyExponential
+	cfg.Retries.ExponentialBackoff = ExponentialBackoffConfig{
 		InitialInterval: 2 * time.Millisecond,
 		Multiplier:      1.1,
 	}
 
 	client := MustWithOpts(cfg, Opts{
-		UserAgent:   "test-agent",
-		RequestType: "test-request",
+		UserAgent:  "test-agent",
+		ClientType: "test-client-type",
 	})
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
 	require.NoError(t, err)

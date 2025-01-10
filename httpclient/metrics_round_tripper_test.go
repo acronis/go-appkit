@@ -8,11 +8,12 @@ package httpclient
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewMetricsRoundTripper(t *testing.T) {
@@ -24,9 +25,8 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 	collector := NewPrometheusMetricsCollector("")
 	defer collector.Unregister()
 
-	metricsRoundTripper := NewMetricsRoundTripperWithOpts(http.DefaultTransport, MetricsRoundTripperOpts{
-		RequestType: "test-request",
-		Collector:   collector,
+	metricsRoundTripper := NewMetricsRoundTripperWithOpts(http.DefaultTransport, collector, MetricsRoundTripperOpts{
+		ClientType: "test-client-type",
 	})
 	client := &http.Client{Transport: metricsRoundTripper}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
