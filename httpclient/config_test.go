@@ -34,7 +34,7 @@ func TestConfigWithLoader(t *testing.T) {
 				},
 			},
 		},
-		RateLimits: RateLimitConfig{
+		RateLimits: RateLimitsConfig{
 			Enabled:     true,
 			Limit:       300,
 			Burst:       3000,

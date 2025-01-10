@@ -40,7 +40,7 @@ func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 	require.Contains(
 		t, logger.Entries()[0].Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultReqType),
+		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
 	)
 }
 
@@ -64,7 +64,7 @@ func TestMustHTTPClientLoggingRoundTripper(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 	require.Contains(
 		t, logger.Entries()[0].Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultReqType),
+		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
 	)
 }
 
@@ -78,9 +78,8 @@ func TestNewHTTPClientWithOptsRoundTripper(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
 	client, err := NewWithOpts(cfg, Opts{
-		UserAgent: "test-agent",
-		ReqType:   "test-request",
-		Delegate:  nil,
+		UserAgent:   "test-agent",
+		RequestType: "test-request",
 	})
 	require.NoError(t, err)
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
@@ -108,9 +107,8 @@ func TestMustHTTPClientWithOptsRoundTripper(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Log.Enabled = true
 	client := MustWithOpts(cfg, Opts{
-		UserAgent: "test-agent",
-		ReqType:   "test-request",
-		Delegate:  nil,
+		UserAgent:   "test-agent",
+		RequestType: "test-request",
 	})
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
@@ -145,9 +143,8 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	}
 
 	client := MustWithOpts(cfg, Opts{
-		UserAgent: "test-agent",
-		ReqType:   "test-request",
-		Delegate:  nil,
+		UserAgent:   "test-agent",
+		RequestType: "test-request",
 	})
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
 	require.NoError(t, err)

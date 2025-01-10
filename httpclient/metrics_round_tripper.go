@@ -16,13 +16,13 @@ import (
 
 var (
 	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
-	ClassifyRequest func(r *http.Request, reqType string) string
+	ClassifyRequest func(r *http.Request, requestType string) string
 )
 
 // MetricsCollector is an interface for collecting metrics for client requests.
 type MetricsCollector interface {
 	// RequestDuration observes the duration of the request and the status code.
-	RequestDuration(reqType, remoteAddress, summary, status string, startTime time.Time)
+	RequestDuration(requestType, remoteAddress, summary, status string, startTime time.Time)
 }
 
 // PrometheusMetricsCollector is a Prometheus metrics collector.
@@ -49,8 +49,8 @@ func (p *PrometheusMetricsCollector) MustRegister() {
 }
 
 // RequestDuration observes the duration of the request and the status code.
-func (p *PrometheusMetricsCollector) RequestDuration(reqType, host, summary, status string, start time.Time) {
-	p.Durations.WithLabelValues(reqType, host, summary, status).Observe(time.Since(start).Seconds())
+func (p *PrometheusMetricsCollector) RequestDuration(requestType, host, summary, status string, start time.Time) {
+	p.Durations.WithLabelValues(requestType, host, summary, status).Observe(time.Since(start).Seconds())
 }
 
 // Unregister the Prometheus metrics.
@@ -63,8 +63,8 @@ type MetricsRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	ReqType string
+	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
+	RequestType string
 
 	// Collector is a metrics collector.
 	Collector MetricsCollector
@@ -72,8 +72,8 @@ type MetricsRoundTripper struct {
 
 // MetricsRoundTripperOpts is an HTTP transport that measures requests done.
 type MetricsRoundTripperOpts struct {
-	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	ReqType string
+	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
+	RequestType string
 
 	// Collector is a metrics collector.
 	Collector MetricsCollector
@@ -86,12 +86,12 @@ func NewMetricsRoundTripper(delegate http.RoundTripper) http.RoundTripper {
 
 // NewMetricsRoundTripperWithOpts creates an HTTP transport that measures requests done.
 func NewMetricsRoundTripperWithOpts(delegate http.RoundTripper, opts MetricsRoundTripperOpts) http.RoundTripper {
-	reqType := DefaultReqType
-	if opts.ReqType == "" {
-		reqType = opts.ReqType
+	requestType := DefaultRequestType
+	if opts.RequestType == "" {
+		requestType = opts.RequestType
 	}
 
-	return &MetricsRoundTripper{Delegate: delegate, ReqType: reqType, Collector: opts.Collector}
+	return &MetricsRoundTripper{Delegate: delegate, RequestType: requestType, Collector: opts.Collector}
 }
 
 // RoundTrip measures external requests done.
@@ -108,15 +108,15 @@ func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		status = strconv.Itoa(resp.StatusCode)
 	}
 
-	rt.Collector.RequestDuration(rt.ReqType, r.Host, requestSummary(r, rt.ReqType), status, start)
+	rt.Collector.RequestDuration(rt.RequestType, r.Host, requestSummary(r, rt.RequestType), status, start)
 	return resp, err
 }
 
 // requestSummary does request classification, producing non-parameterized summary for given request.
-func requestSummary(r *http.Request, reqType string) string {
+func requestSummary(r *http.Request, requestType string) string {
 	if ClassifyRequest != nil {
-		return ClassifyRequest(r, reqType)
+		return ClassifyRequest(r, requestType)
 	}
 
-	return fmt.Sprintf("%s %s", r.Method, reqType)
+	return fmt.Sprintf("%s %s", r.Method, requestType)
 }

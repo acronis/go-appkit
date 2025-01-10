@@ -18,8 +18,8 @@ import (
 type RetryPolicy string
 
 const (
-	// DefaultReqType is a default request type.
-	DefaultReqType = "go-appkit"
+	// DefaultRequestType is a default request type.
+	DefaultRequestType = "go-appkit"
 
 	// DefaultClientWaitTimeout is a default timeout for a client to wait for a request.
 	DefaultClientWaitTimeout = 10 * time.Second
@@ -51,8 +51,8 @@ const (
 var _ config.Config = (*Config)(nil)
 var _ config.KeyPrefixProvider = (*Config)(nil)
 
-// RateLimitConfig represents configuration options for HTTP client rate limits.
-type RateLimitConfig struct {
+// RateLimitsConfig represents configuration options for HTTP client rate limits.
+type RateLimitsConfig struct {
 	// Enabled is a flag that enables rate limiting.
 	Enabled bool
 
@@ -67,7 +67,7 @@ type RateLimitConfig struct {
 }
 
 // Set is part of config interface implementation.
-func (c *RateLimitConfig) Set(dp config.DataProvider) (err error) {
+func (c *RateLimitsConfig) Set(dp config.DataProvider) (err error) {
 	enabled, err := dp.GetBool(cfgKeyRateLimitsEnabled)
 	if err != nil {
 		return err
@@ -109,10 +109,10 @@ func (c *RateLimitConfig) Set(dp config.DataProvider) (err error) {
 }
 
 // SetProviderDefaults is part of config interface implementation.
-func (c *RateLimitConfig) SetProviderDefaults(_ config.DataProvider) {}
+func (c *RateLimitsConfig) SetProviderDefaults(_ config.DataProvider) {}
 
 // TransportOpts returns transport options.
-func (c *RateLimitConfig) TransportOpts() RateLimitingRoundTripperOpts {
+func (c *RateLimitsConfig) TransportOpts() RateLimitingRoundTripperOpts {
 	return RateLimitingRoundTripperOpts{
 		Burst:       c.Burst,
 		WaitTimeout: c.WaitTimeout,
@@ -354,7 +354,7 @@ type Config struct {
 	Retries RetriesConfig
 
 	// RateLimits is a configuration for HTTP client rate limits.
-	RateLimits RateLimitConfig
+	RateLimits RateLimitsConfig
 
 	// Log is a configuration for HTTP client logs.
 	Log LogConfig

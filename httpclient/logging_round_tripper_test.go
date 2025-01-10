@@ -40,7 +40,7 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	loggerEntry := logger.Entries()[0]
 	require.Contains(
 		t, loggerEntry.Text,
-		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultReqType),
+		fmt.Sprintf("client http request POST %s req type %s status code 418", server.URL, DefaultRequestType),
 	)
 }
 
@@ -66,7 +66,7 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	loggerEntry := logger.Entries()[0]
 	require.Contains(
 		t, loggerEntry.Text,
-		fmt.Sprintf("client http request POST %s req type %s", serverURL, DefaultReqType),
+		fmt.Sprintf("client http request POST %s req type %s", serverURL, DefaultRequestType),
 	)
 	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String()+": connect: connection refused")
 	require.NotContains(t, loggerEntry.Text, "status code")
@@ -144,8 +144,8 @@ func TestNewLoggingRoundTripperModes(t *testing.T) {
 			loggerRoundTripper := NewLoggingRoundTripperWithOpts(
 				http.DefaultTransport,
 				LoggingRoundTripperOpts{
-					ReqType: "test-request",
-					Mode:    tt.mode,
+					RequestType: "test-request",
+					Mode:        tt.mode,
 				},
 			)
 			client := &http.Client{Transport: loggerRoundTripper}
@@ -173,8 +173,8 @@ func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
 
 	var loggerProviderCalled bool
 	client := MustWithOpts(cfg, Opts{
-		UserAgent: "test-agent",
-		ReqType:   "test-request",
+		UserAgent:   "test-agent",
+		RequestType: "test-request",
 		LoggerProvider: func(ctx context.Context) log.FieldLogger {
 			loggerProviderCalled = true
 			return logger
@@ -203,9 +203,9 @@ func TestNewLoggingRoundTripperWithRequestID(t *testing.T) {
 	loggerRoundTripper := NewLoggingRoundTripper(http.DefaultTransport)
 	client := &http.Client{Transport: loggerRoundTripper}
 	ctx := middleware.NewContextWithLogger(context.Background(), logger)
-	ctx = middleware.NewContextWithRequestID(ctx, requestID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
+	req.Header.Set("X-Request-ID", requestID)
 
 	r, err := client.Do(req)
 	defer func() { _ = r.Body.Close() }()

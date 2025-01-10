@@ -38,8 +38,8 @@ type LoggingRoundTripper struct {
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
 
-	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	ReqType string
+	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
+	RequestType string
 
 	// Mode of logging: none, all, failed.
 	Mode LoggingMode
@@ -54,8 +54,8 @@ type LoggingRoundTripper struct {
 
 // LoggingRoundTripperOpts represents an options for LoggingRoundTripper.
 type LoggingRoundTripperOpts struct {
-	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	ReqType string
+	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
+	RequestType string
 
 	// Mode of logging: none, all, failed.
 	Mode LoggingMode
@@ -71,7 +71,7 @@ type LoggingRoundTripperOpts struct {
 // NewLoggingRoundTripper creates an HTTP transport that log requests.
 func NewLoggingRoundTripper(delegate http.RoundTripper) http.RoundTripper {
 	return NewLoggingRoundTripperWithOpts(delegate, LoggingRoundTripperOpts{
-		ReqType: DefaultReqType,
+		RequestType: DefaultRequestType,
 	})
 }
 
@@ -79,14 +79,14 @@ func NewLoggingRoundTripper(delegate http.RoundTripper) http.RoundTripper {
 func NewLoggingRoundTripperWithOpts(
 	delegate http.RoundTripper, opts LoggingRoundTripperOpts,
 ) http.RoundTripper {
-	reqType := opts.ReqType
-	if reqType == "" {
-		reqType = DefaultReqType
+	requestType := opts.RequestType
+	if requestType == "" {
+		requestType = DefaultRequestType
 	}
 
 	return &LoggingRoundTripper{
 		Delegate:             delegate,
-		ReqType:              reqType,
+		RequestType:          requestType,
 		Mode:                 opts.Mode,
 		SlowRequestThreshold: opts.SlowRequestThreshold,
 		LoggerProvider:       opts.LoggerProvider,
@@ -116,7 +116,7 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 	elapsed := time.Since(start)
 	if logger != nil && elapsed >= rt.SlowRequestThreshold {
 		common := "client http request %s %s req type %s "
-		args := []interface{}{r.Method, r.URL.String(), rt.ReqType, elapsed.Seconds(), err}
+		args := []interface{}{r.Method, r.URL.String(), rt.RequestType, elapsed.Seconds(), err}
 		message := common + "time taken %.3f, err %+v"
 		loggerAtLevel := logger.Infof
 
@@ -125,7 +125,7 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 				return resp, err
 			}
 
-			args = []interface{}{r.Method, r.URL.String(), rt.ReqType, resp.StatusCode, elapsed.Seconds(), err}
+			args = []interface{}{r.Method, r.URL.String(), rt.RequestType, resp.StatusCode, elapsed.Seconds(), err}
 			message = common + "status code %d, time taken %.3f, err %+v"
 		}
 
@@ -133,7 +133,7 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 			loggerAtLevel = logger.Errorf
 		}
 
-		requestID := middleware.GetRequestIDFromContext(ctx)
+		requestID := r.Header.Get("X-Request-ID")
 		if requestID != "" {
 			message += " request id %s "
 			args = append(args, requestID)
@@ -142,7 +142,7 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		loggerAtLevel(message, args...)
 		loggingParams := middleware.GetLoggingParamsFromContext(ctx)
 		if loggingParams != nil {
-			loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.ReqType), elapsed)
+			loggingParams.AddTimeSlotDurationInMs(fmt.Sprintf("external_request_%s_ms", rt.RequestType), elapsed)
 		}
 	}
 

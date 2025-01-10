@@ -35,37 +35,7 @@ func CloneHTTPHeader(in http.Header) http.Header {
 // New wraps delegate transports with logging, rate limiting, retryable, request id
 // and returns an error if any occurs.
 func New(cfg *Config) (*http.Client, error) {
-	var err error
-	var delegate http.RoundTripper
-
-	delegate = http.DefaultTransport.(*http.Transport).Clone()
-
-	if cfg.Log.Enabled {
-		opts := cfg.Log.TransportOpts()
-		delegate = NewLoggingRoundTripperWithOpts(delegate, opts)
-	}
-
-	if cfg.RateLimits.Enabled {
-		delegate, err = NewRateLimitingRoundTripperWithOpts(
-			delegate, cfg.RateLimits.Limit, cfg.RateLimits.TransportOpts(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("create rate limiting round tripper: %w", err)
-		}
-	}
-
-	delegate = NewRequestIDRoundTripper(delegate)
-
-	if cfg.Retries.Enabled {
-		opts := cfg.Retries.TransportOpts()
-		opts.BackoffPolicy = cfg.Retries.GetPolicy()
-		delegate, err = NewRetryableRoundTripperWithOpts(delegate, opts)
-		if err != nil {
-			return nil, fmt.Errorf("create retryable round tripper: %w", err)
-		}
-	}
-
-	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
+	return NewWithOpts(cfg, Opts{})
 }
 
 // Must wraps delegate transports with logging, rate limiting, retryable, request id
@@ -84,8 +54,8 @@ type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
-	// ReqType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
-	ReqType string
+	// RequestType is a type of request. e.g. service 'auth-service', an action 'login' or specific information to correlate.
+	RequestType string
 
 	// Delegate is the next RoundTripper in the chain.
 	Delegate http.RoundTripper
@@ -114,14 +84,14 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 	if cfg.Log.Enabled {
 		logOpts := cfg.Log.TransportOpts()
 		logOpts.LoggerProvider = opts.LoggerProvider
-		logOpts.ReqType = opts.ReqType
+		logOpts.RequestType = opts.RequestType
 		delegate = NewLoggingRoundTripperWithOpts(delegate, logOpts)
 	}
 
 	if cfg.Metrics.Enabled {
 		delegate = NewMetricsRoundTripperWithOpts(delegate, MetricsRoundTripperOpts{
-			ReqType:   opts.ReqType,
-			Collector: opts.Collector,
+			RequestType: opts.RequestType,
+			Collector:   opts.Collector,
 		})
 	}
 
@@ -134,8 +104,8 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 		}
 	}
 
-	if opts.ReqType != "" {
-		delegate = NewUserAgentRoundTripper(delegate, opts.ReqType)
+	if opts.UserAgent != "" {
+		delegate = NewUserAgentRoundTripper(delegate, opts.UserAgent)
 	}
 
 	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{

@@ -25,8 +25,8 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 	defer collector.Unregister()
 
 	metricsRoundTripper := NewMetricsRoundTripperWithOpts(http.DefaultTransport, MetricsRoundTripperOpts{
-		ReqType:   "test-request",
-		Collector: collector,
+		RequestType: "test-request",
+		Collector:   collector,
 	})
 	client := &http.Client{Transport: metricsRoundTripper}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
