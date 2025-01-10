@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestNewLoggingRoundTripper(t *testing.T) {
@@ -91,76 +92,6 @@ func TestMustHTTPClientLoggingRoundTripperDisabled(t *testing.T) {
 	require.Empty(t, logger.Entries())
 }
 
-func TestNewLoggingRoundTripperModes(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			rw.WriteHeader(http.StatusBadRequest)
-		} else {
-			rw.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer server.Close()
-
-	tests := []struct {
-		name   string
-		method string
-		mode   LoggingMode
-		want   int
-	}{
-		{
-			name:   "no requests are logged because of 'none' mode",
-			method: http.MethodGet,
-			mode:   "none",
-		},
-		{
-			name:   "4xx and 5xx requests are logged because of 'failed' mode",
-			method: http.MethodPost,
-			mode:   "failed",
-			want:   1,
-		},
-		{
-			name:   "only 4xx and 5xx requests so no logs because of 'failed' mode for 2xx",
-			method: http.MethodGet,
-			mode:   "failed",
-		},
-		{
-			name:   "success requests are logged because of 'all' mode",
-			method: http.MethodGet,
-			mode:   "all",
-			want:   1,
-		},
-		{
-			name:   "failed requests are logged because of 'all' mode",
-			method: http.MethodPost,
-			mode:   "all",
-			want:   1,
-		},
-	}
-
-	for i := range tests {
-		tt := tests[i]
-		t.Run(tt.name, func(t *testing.T) {
-			logger := logtest.NewRecorder()
-			loggerRoundTripper := NewLoggingRoundTripperWithOpts(
-				http.DefaultTransport,
-				LoggingRoundTripperOpts{
-					RequestType: "test-request",
-					Mode:        tt.mode,
-				},
-			)
-			client := &http.Client{Transport: loggerRoundTripper}
-			ctx := middleware.NewContextWithLogger(context.Background(), logger)
-			req, err := http.NewRequestWithContext(ctx, tt.method, server.URL, nil)
-			require.NoError(t, err)
-
-			r, err := client.Do(req)
-			defer func() { _ = r.Body.Close() }()
-			require.NoError(t, err)
-			require.Len(t, logger.Entries(), tt.want)
-		})
-	}
-}
-
 func TestMustHTTPClientLoggingRoundTripperOpts(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -214,4 +145,84 @@ func TestNewLoggingRoundTripperWithRequestID(t *testing.T) {
 
 	loggerEntry := logger.Entries()[0]
 	require.Contains(t, loggerEntry.Text, fmt.Sprintf("request id %s", requestID))
+}
+
+func TestNewLoggingRoundTripperLevels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rw.WriteHeader(http.StatusTeapot)
+		} else {
+			rw.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer server.Close()
+
+	tests := []struct {
+		name   string
+		opts   LoggingRoundTripperOpts
+		level  log.Level
+		method string
+		noLogs bool
+	}{
+		{
+			name:   "log mode 'all' failed requests with error level",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeAll},
+			level:  log.LevelError,
+			method: http.MethodPost,
+		},
+		{
+			name:   "log mode 'failed' failed requests with error level",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeFailed},
+			level:  log.LevelError,
+			method: http.MethodPost,
+		},
+		{
+			name:   "log mode 'all' slow successful requests with warn level",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeAll},
+			level:  log.LevelWarn,
+			method: http.MethodGet,
+		},
+		{
+			name:   "log mode 'failed' slow successful requests with warn level",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeFailed},
+			level:  log.LevelWarn,
+			method: http.MethodGet,
+		},
+		{
+			name:   "log mode 'all' requests with info level under slow threshold",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeAll, SlowRequestThreshold: 5 * time.Second},
+			level:  log.LevelInfo,
+			method: http.MethodGet,
+		},
+		{
+			name:   "log mode 'failed' do not log requests for successful requests under slow threshold",
+			opts:   LoggingRoundTripperOpts{Mode: LoggingModeFailed, SlowRequestThreshold: 5 * time.Second},
+			method: http.MethodGet,
+			noLogs: true,
+		},
+	}
+
+	for i := range tests {
+		tt := tests[i]
+		t.Run(tt.name, func(t *testing.T) {
+			logger := logtest.NewRecorder()
+			loggerRoundTripper := NewLoggingRoundTripperWithOpts(http.DefaultTransport, tt.opts)
+			client := &http.Client{Transport: loggerRoundTripper}
+			ctx := middleware.NewContextWithLogger(context.Background(), logger)
+			req, err := http.NewRequestWithContext(ctx, tt.method, server.URL, nil)
+			require.NoError(t, err)
+
+			r, err := client.Do(req)
+			defer func() { _ = r.Body.Close() }()
+			require.NoError(t, err)
+
+			entries := logger.Entries()
+			if tt.noLogs {
+				require.Empty(t, entries)
+				return
+			}
+			require.NotEmpty(t, entries)
+			require.Equal(t, tt.level, entries[0].Level)
+		})
+	}
 }
