@@ -8,8 +8,10 @@ package httpclient
 
 import (
 	"context"
+	"github.com/acronis/go-appkit/testutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,18 +38,14 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 
-	ch := make(chan prometheus.Metric, 1)
-	go func() {
-		collector.Durations.Collect(ch)
-		close(ch)
-	}()
-
-	var metricCount int
-	for range ch {
-		metricCount++
+	labels := prometheus.Labels{
+		"client_type":    "test-client-type",
+		"remote_address": strings.ReplaceAll(server.URL, "http://", ""),
+		"summary":        "POST test-client-type",
+		"status":         "418",
 	}
-
-	require.Equal(t, metricCount, 1)
+	hist := collector.Durations.With(labels).(prometheus.Histogram)
+	testutil.AssertSamplesCountInHistogram(t, hist, 1)
 }
 
 func TestNewMetricsCollectionRequiredRoundTripper(t *testing.T) {

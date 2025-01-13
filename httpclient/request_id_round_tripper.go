@@ -8,6 +8,7 @@ package httpclient
 
 import (
 	"context"
+	"github.com/rs/xid"
 	"net/http"
 
 	"github.com/acronis/go-appkit/httpserver/middleware"
@@ -55,9 +56,13 @@ func (rt *RequestIDRoundTripper) getRequestIDProvider() func(ctx context.Context
 
 // RoundTrip adds X-Request-ID header to the request.
 func (rt *RequestIDRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	requestID := rt.getRequestIDProvider()(r.Context())
-	if r.Header.Get("X-Request-ID") != "" || requestID == "" {
+	if r.Header.Get("X-Request-ID") != "" {
 		return rt.Delegate.RoundTrip(r)
+	}
+
+	requestID := rt.getRequestIDProvider()(r.Context())
+	if requestID == "" {
+		requestID = xid.New().String()
 	}
 
 	r = r.Clone(r.Context())
