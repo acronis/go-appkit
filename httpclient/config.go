@@ -264,7 +264,7 @@ type LogConfig struct {
 	// SlowRequestThreshold is a threshold for slow requests.
 	SlowRequestThreshold time.Duration
 
-	// Mode of logging: [all, failed].
+	// Mode of logging: [all, failed]. 'all' by default.
 	Mode LoggingMode
 }
 

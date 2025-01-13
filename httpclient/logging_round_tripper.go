@@ -57,7 +57,7 @@ type LoggingRoundTripperOpts struct {
 	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
-	// Mode of logging: [all, failed].
+	// Mode of logging: [all, failed]. 'all' by default.
 	Mode LoggingMode
 
 	// SlowRequestThreshold is a threshold for slow requests.
