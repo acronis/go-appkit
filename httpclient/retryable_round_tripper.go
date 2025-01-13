@@ -190,7 +190,7 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 		if curRetryAttemptNum > 0 {
 			if !reqCloned {
-				req, reqCloned = CloneHTTPRequest(req), true // Per RoundTripper contract.
+				req, reqCloned = req.Clone(req.Context()), true // Per RoundTripper contract.
 			}
 			req.Header.Set(RetryAttemptNumberHeader, strconv.Itoa(curRetryAttemptNum))
 		}

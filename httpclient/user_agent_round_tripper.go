@@ -69,7 +69,7 @@ func (rt *UserAgentRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 		}
 	}
 
-	req = CloneHTTPRequest(req) // Per RoundTripper contract.
+	req = req.Clone(req.Context()) // Per RoundTripper contract.
 	req.Header.Set("User-Agent", userAgent)
 	return rt.Delegate.RoundTrip(req)
 }
