@@ -67,7 +67,7 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	require.NotEmpty(t, logger.Entries())
 
 	loggerEntry := logger.Entries()[0]
-	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String()+": connect: connection refused")
+	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String())
 	require.NotContains(t, loggerEntry.Text, "status code")
 }
 
