@@ -18,7 +18,7 @@ import (
 // MetricsCollector is an interface for collecting metrics for client requests.
 type MetricsCollector interface {
 	// RequestDuration observes the duration of the request and the status code.
-	RequestDuration(requestType, remoteAddress, summary, status string, startTime time.Time)
+	RequestDuration(requestType, remoteAddress, summary, status string, duration float64)
 }
 
 // PrometheusMetricsCollector is a Prometheus metrics collector.
@@ -45,8 +45,8 @@ func (p *PrometheusMetricsCollector) MustRegister() {
 }
 
 // RequestDuration observes the duration of the request and the status code.
-func (p *PrometheusMetricsCollector) RequestDuration(requestType, host, summary, status string, start time.Time) {
-	p.Durations.WithLabelValues(requestType, host, summary, status).Observe(time.Since(start).Seconds())
+func (p *PrometheusMetricsCollector) RequestDuration(requestType, host, summary, status string, duration float64) {
+	p.Durations.WithLabelValues(requestType, host, summary, status).Observe(duration)
 }
 
 // Unregister the Prometheus metrics.
@@ -62,8 +62,8 @@ type MetricsRoundTripper struct {
 	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
-	// Collector is a metrics collector.
-	Collector MetricsCollector
+	// MetricsCollector is a metrics collector.
+	MetricsCollector MetricsCollector
 
 	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
 	ClassifyRequest func(r *http.Request, requestType string) string
@@ -90,23 +90,24 @@ func NewMetricsRoundTripperWithOpts(
 	opts MetricsRoundTripperOpts,
 ) http.RoundTripper {
 	return &MetricsRoundTripper{
-		Delegate:        delegate,
-		ClientType:      opts.ClientType,
-		Collector:       collector,
-		ClassifyRequest: opts.ClassifyRequest,
+		Delegate:         delegate,
+		ClientType:       opts.ClientType,
+		MetricsCollector: collector,
+		ClassifyRequest:  opts.ClassifyRequest,
 	}
 }
 
 // RoundTrip measures external requests done.
 func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	if rt.Collector == nil {
-		return rt.Delegate.RoundTrip(r)
+	if rt.MetricsCollector == nil {
+		return nil, fmt.Errorf("metrics collector is not provided")
 	}
 
-	status := "0"
 	start := time.Now()
-
 	resp, err := rt.Delegate.RoundTrip(r)
+	duration := time.Since(start).Seconds()
+	status := "0"
+
 	if err == nil && resp != nil {
 		status = strconv.Itoa(resp.StatusCode)
 	}
@@ -116,6 +117,6 @@ func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		summary = rt.ClassifyRequest(r, rt.ClientType)
 	}
 
-	rt.Collector.RequestDuration(rt.ClientType, r.Host, summary, status, start)
+	rt.MetricsCollector.RequestDuration(rt.ClientType, r.Host, summary, status, duration)
 	return resp, err
 }

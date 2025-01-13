@@ -295,7 +295,7 @@ func (c *LogConfig) Set(dp config.DataProvider) error {
 	}
 	loggingMode := LoggingMode(mode)
 	if !loggingMode.IsValid() {
-		return dp.WrapKeyErr(cfgKeyLogMode, errors.New("choose one of: [none, all, failed]"))
+		return dp.WrapKeyErr(cfgKeyLogMode, errors.New("choose one of: [all, failed]"))
 	}
 	c.Mode = loggingMode
 

@@ -19,9 +19,10 @@ import (
 
 func TestNewRequestIDRoundTripper(t *testing.T) {
 	requestID := "12345"
+	var receivedRequestID string
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		require.Equal(t, requestID, r.Header.Get("X-Request-ID"))
+		receivedRequestID = r.Header.Get("X-Request-ID")
 		rw.WriteHeader(http.StatusTeapot)
 	}))
 	defer server.Close()
@@ -35,14 +36,16 @@ func TestNewRequestIDRoundTripper(t *testing.T) {
 	r, err := client.Do(req)
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
+	require.Equal(t, requestID, receivedRequestID)
 }
 
 func TestNewRequestIDRoundTripperWithOpts(t *testing.T) {
 	requestID := "12345"
 	prefix := "my_custom_request_provider"
+	var receivedRequestID string
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		require.Equal(t, prefix+requestID, r.Header.Get("X-Request-ID"))
+		receivedRequestID = prefix + requestID
 		rw.WriteHeader(http.StatusTeapot)
 	}))
 	defer server.Close()
@@ -59,4 +62,5 @@ func TestNewRequestIDRoundTripperWithOpts(t *testing.T) {
 	r, err := client.Do(req)
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
+	require.Equal(t, prefix+requestID, receivedRequestID)
 }

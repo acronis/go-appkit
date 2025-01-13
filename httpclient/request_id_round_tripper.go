@@ -55,11 +55,11 @@ func (rt *RequestIDRoundTripper) getRequestIDProvider() func(ctx context.Context
 
 // RoundTrip adds X-Request-ID header to the request.
 func (rt *RequestIDRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.Header.Get("X-Request-ID") != "" {
+	requestID := rt.getRequestIDProvider()(r.Context())
+	if r.Header.Get("X-Request-ID") != "" || requestID == "" {
 		return rt.Delegate.RoundTrip(r)
 	}
 
-	requestID := rt.getRequestIDProvider()(r.Context())
 	r = r.Clone(r.Context())
 	r.Header.Set("X-Request-ID", requestID)
 	return rt.Delegate.RoundTrip(r)

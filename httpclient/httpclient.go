@@ -20,9 +20,9 @@ func New(cfg *Config) (*http.Client, error) {
 	return NewWithOpts(cfg, Opts{})
 }
 
-// Must wraps delegate transports with logging, rate limiting, retryable, request id
+// MustNew wraps delegate transports with logging, rate limiting, retryable, request id
 // and panics if any error occurs.
-func Must(cfg *Config) *http.Client {
+func MustNew(cfg *Config) *http.Client {
 	client, err := New(cfg)
 	if err != nil {
 		panic(err)
@@ -48,8 +48,8 @@ type Opts struct {
 	// RequestIDProvider is a function that provides a request ID.
 	RequestIDProvider func(ctx context.Context) string
 
-	// Collector is a metrics collector.
-	Collector MetricsCollector
+	// MetricsCollector is a metrics collector.
+	MetricsCollector MetricsCollector
 }
 
 // NewWithOpts wraps delegate transports with options
@@ -95,7 +95,7 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 	}
 
 	if cfg.Metrics.Enabled {
-		delegate = NewMetricsRoundTripperWithOpts(delegate, opts.Collector, MetricsRoundTripperOpts{
+		delegate = NewMetricsRoundTripperWithOpts(delegate, opts.MetricsCollector, MetricsRoundTripperOpts{
 			ClientType: opts.ClientType,
 		})
 	}
@@ -110,10 +110,10 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
 }
 
-// MustWithOpts wraps delegate transports with options
+// MustNewWithOpts wraps delegate transports with options
 // logging, metrics, rate limiting, retryable, user agent, request id
 // and panics if any error occurs.
-func MustWithOpts(cfg *Config, opts Opts) *http.Client {
+func MustNewWithOpts(cfg *Config, opts Opts) *http.Client {
 	client, err := NewWithOpts(cfg, opts)
 	if err != nil {
 		panic(err)

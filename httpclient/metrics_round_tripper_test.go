@@ -49,3 +49,19 @@ func TestNewMetricsRoundTripper(t *testing.T) {
 
 	require.Equal(t, metricCount, 1)
 }
+
+func TestNewMetricsCollectionRequiredRoundTripper(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	metricsRoundTripper := NewMetricsRoundTripper(http.DefaultTransport, nil)
+	client := &http.Client{Transport: metricsRoundTripper}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	_, err = client.Do(req) // nolint:bodyclose
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "metrics collector is not provided")
+}

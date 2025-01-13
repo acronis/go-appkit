@@ -41,7 +41,7 @@ type LoggingRoundTripper struct {
 	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
 	ClientType string
 
-	// Mode of logging: [all, failed].
+	// Mode of logging: [all, failed]. 'all' by default.
 	Mode LoggingMode
 
 	// SlowRequestThreshold is a threshold for slow requests.
@@ -131,14 +131,12 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 	}
 
 	if rt.ClientType != "" {
-		message += " client type %s "
-		args = append(args, rt.ClientType)
+		message += fmt.Sprintf(" client type %s ", rt.ClientType)
 	}
 
 	requestID := r.Header.Get("X-Request-ID")
 	if requestID != "" {
-		message += " request id %s "
-		args = append(args, requestID)
+		message += fmt.Sprintf("request id %s ", requestID)
 	}
 
 	loggerAtLevel(message, args...)

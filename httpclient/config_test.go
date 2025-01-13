@@ -91,7 +91,7 @@ func TestConfigLogger(t *testing.T) {
 	actualConfig = &Config{}
 	err = config.NewDefaultLoader("").LoadFromReader(bytes.NewReader(yamlData), config.DataTypeYAML, actualConfig)
 	require.Error(t, err)
-	require.Equal(t, "log.mode: choose one of: [none, all, failed]", err.Error())
+	require.Equal(t, "log.mode: choose one of: [all, failed]", err.Error())
 }
 
 func TestConfigRetriesPolicy(t *testing.T) {
