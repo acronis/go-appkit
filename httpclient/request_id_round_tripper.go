@@ -8,8 +8,9 @@ package httpclient
 
 import (
 	"context"
-	"github.com/rs/xid"
 	"net/http"
+
+	"github.com/rs/xid"
 
 	"github.com/acronis/go-appkit/httpserver/middleware"
 )

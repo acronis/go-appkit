@@ -8,7 +8,6 @@ package httpclient
 
 import (
 	"context"
-	"github.com/acronis/go-appkit/testutil"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +15,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/acronis/go-appkit/testutil"
 )
 
 func TestNewMetricsRoundTripper(t *testing.T) {
