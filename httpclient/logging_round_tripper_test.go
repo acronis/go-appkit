@@ -38,9 +38,10 @@ func TestNewLoggingRoundTripper(t *testing.T) {
 	r, err := client.Do(req)
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
-	require.NotEmpty(t, logger.Entries())
+	entries := logger.Entries()
+	require.NotEmpty(t, entries)
 
-	loggerEntry := logger.Entries()[0]
+	loggerEntry := entries[0]
 	require.Contains(
 		t, loggerEntry.Text,
 		fmt.Sprintf("client http request POST %s", server.URL),
@@ -64,9 +65,10 @@ func TestMustHTTPClientLoggingRoundTripperError(t *testing.T) {
 	r, err := client.Do(req) // nolint:bodyclose
 	require.Error(t, err)
 	require.Nil(t, r)
-	require.NotEmpty(t, logger.Entries())
+	entries := logger.Entries()
+	require.NotEmpty(t, entries)
 
-	loggerEntry := logger.Entries()[0]
+	loggerEntry := entries[0]
 	require.Contains(t, loggerEntry.Text, "err dial tcp "+ln.Addr().String())
 	require.NotContains(t, loggerEntry.Text, "status code")
 }
@@ -139,9 +141,10 @@ func TestNewLoggingRoundTripperWithRequestID(t *testing.T) {
 	r, err := client.Do(req)
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
-	require.NotEmpty(t, logger.Entries())
+	entries := logger.Entries()
+	require.NotEmpty(t, entries)
 
-	loggerEntry := logger.Entries()[0]
+	loggerEntry := entries[0]
 	require.Contains(t, loggerEntry.Text, fmt.Sprintf("request id %s", requestID))
 }
 
@@ -223,4 +226,32 @@ func TestNewLoggingRoundTripperLevels(t *testing.T) {
 			require.Equal(t, tt.level, entries[0].Level)
 		})
 	}
+}
+
+func TestNewLoggingRoundTripperRequestType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusTeapot)
+	}))
+	defer server.Close()
+
+	requestType := "get_tasks"
+	logger := logtest.NewRecorder()
+	loggerRoundTripper := NewLoggingRoundTripper(http.DefaultTransport)
+	client := &http.Client{Transport: loggerRoundTripper}
+	ctx := NewContextWithRequestType(context.Background(), requestType)
+	ctx = middleware.NewContextWithLogger(ctx, logger)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+	entries := logger.Entries()
+	require.NotEmpty(t, entries)
+
+	loggerEntry := entries[0]
+	require.Contains(
+		t, loggerEntry.Text,
+		fmt.Sprintf("request type %s", requestType),
+	)
 }
