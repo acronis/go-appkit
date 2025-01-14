@@ -24,6 +24,9 @@ type KeyPrefixProvider interface {
 func CallSetProviderDefaultsForFields(obj interface{}, dp DataProvider) {
 	el := reflect.ValueOf(obj).Elem()
 	for i := 0; i < el.NumField(); i++ {
+		if !el.Type().Field(i).IsExported() {
+			continue
+		}
 		v := el.Field(i).Interface()
 		if reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil() {
 			continue
@@ -43,6 +46,9 @@ func CallSetProviderDefaultsForFields(obj interface{}, dp DataProvider) {
 func CallSetForFields(obj interface{}, dp DataProvider) error {
 	el := reflect.ValueOf(obj).Elem()
 	for i := 0; i < el.NumField(); i++ {
+		if !el.Type().Field(i).IsExported() {
+			continue
+		}
 		v := el.Field(i).Interface()
 		if reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil() {
 			continue
