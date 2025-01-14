@@ -134,9 +134,12 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		message += fmt.Sprintf(" client type %s ", rt.ClientType)
 	}
 
-	requestID := r.Header.Get("X-Request-ID")
-	if requestID != "" {
+	if requestID := r.Header.Get("X-Request-ID"); requestID != "" {
 		message += fmt.Sprintf("request id %s ", requestID)
+	}
+
+	if requestType := GetRequestTypeFromContext(ctx); requestType != "" {
+		message += fmt.Sprintf("request type %s ", requestType)
 	}
 
 	loggerAtLevel(message, args...)
