@@ -18,7 +18,7 @@ import (
 // MetricsCollector is an interface for collecting metrics for client requests.
 type MetricsCollector interface {
 	// RequestDuration observes the duration of the request and the status code.
-	RequestDuration(requestType, remoteAddress, summary, status string, duration float64)
+	RequestDuration(clientType, remoteAddress, summary, status, requestType string, duration float64)
 }
 
 // PrometheusMetricsCollector is a Prometheus metrics collector.
@@ -35,7 +35,7 @@ func NewPrometheusMetricsCollector(namespace string) *PrometheusMetricsCollector
 			Name:      "http_client_request_duration_seconds",
 			Help:      "A histogram of the http client requests durations.",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150, 300, 600},
-		}, []string{"client_type", "remote_address", "summary", "status"}),
+		}, []string{"client_type", "remote_address", "summary", "status", "request_type"}),
 	}
 }
 
@@ -45,8 +45,10 @@ func (p *PrometheusMetricsCollector) MustRegister() {
 }
 
 // RequestDuration observes the duration of the request and the status code.
-func (p *PrometheusMetricsCollector) RequestDuration(requestType, host, summary, status string, duration float64) {
-	p.Durations.WithLabelValues(requestType, host, summary, status).Observe(duration)
+func (p *PrometheusMetricsCollector) RequestDuration(
+	clientType, host, summary, status, requestType string, duration float64,
+) {
+	p.Durations.WithLabelValues(clientType, host, summary, status, requestType).Observe(duration)
 }
 
 // Unregister the Prometheus metrics.
@@ -66,7 +68,7 @@ type MetricsRoundTripper struct {
 	MetricsCollector MetricsCollector
 
 	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
-	ClassifyRequest func(r *http.Request, requestType string) string
+	ClassifyRequest func(r *http.Request, clientType string) string
 }
 
 // MetricsRoundTripperOpts is an HTTP transport that measures requests done.
@@ -75,7 +77,7 @@ type MetricsRoundTripperOpts struct {
 	ClientType string
 
 	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
-	ClassifyRequest func(r *http.Request, requestType string) string
+	ClassifyRequest func(r *http.Request, clientType string) string
 }
 
 // NewMetricsRoundTripper creates an HTTP transport that measures requests done.
@@ -117,6 +119,9 @@ func (rt *MetricsRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 		summary = rt.ClassifyRequest(r, rt.ClientType)
 	}
 
-	rt.MetricsCollector.RequestDuration(rt.ClientType, r.Host, summary, status, duration)
+	rt.MetricsCollector.RequestDuration(
+		rt.ClientType, r.Host, summary, status, GetRequestTypeFromContext(r.Context()), duration,
+	)
+
 	return resp, err
 }
