@@ -50,6 +50,9 @@ type Opts struct {
 
 	// MetricsCollector is a metrics collector.
 	MetricsCollector MetricsCollector
+
+	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
+	ClassifyRequest func(r *http.Request, clientType string) string
 }
 
 // NewWithOpts wraps delegate transports with options
@@ -96,7 +99,8 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 
 	if cfg.Metrics.Enabled {
 		delegate = NewMetricsRoundTripperWithOpts(delegate, opts.MetricsCollector, MetricsRoundTripperOpts{
-			ClientType: opts.ClientType,
+			ClientType:      opts.ClientType,
+			ClassifyRequest: opts.ClassifyRequest,
 		})
 	}
 

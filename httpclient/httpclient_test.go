@@ -11,13 +11,16 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/acronis/go-appkit/httpserver/middleware"
 	"github.com/acronis/go-appkit/log/logtest"
+	"github.com/acronis/go-appkit/testutil"
 )
 
 func TestNewHTTPClientLoggingRoundTripper(t *testing.T) {
@@ -146,4 +149,44 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	defer func() { _ = r.Body.Close() }()
 	require.NoError(t, err)
 	require.Equal(t, 2, retriesCount)
+}
+
+func TestMustHTTPClientWithOptsRoundTripperMetrics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	collector := NewPrometheusMetricsCollector("")
+	defer collector.Unregister()
+
+	clientType := "test-client-type"
+	classifyRequest := "test-classify-request"
+	cfg := NewConfig()
+	cfg.Metrics.Enabled = true
+	client := MustNewWithOpts(cfg, Opts{
+		UserAgent:        "test-agent",
+		ClientType:       clientType,
+		MetricsCollector: collector,
+		ClassifyRequest: func(r *http.Request, clientType string) string {
+			return classifyRequest
+		},
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+
+	r, err := client.Do(req)
+	defer func() { _ = r.Body.Close() }()
+	require.NoError(t, err)
+
+	labels := prometheus.Labels{
+		"client_type":    clientType,
+		"remote_address": strings.ReplaceAll(server.URL, "http://", ""),
+		"summary":        classifyRequest,
+		"request_type":   "",
+		"status":         "200",
+	}
+	hist := collector.Durations.With(labels).(prometheus.Histogram)
+	testutil.AssertSamplesCountInHistogram(t, hist, 1)
 }
