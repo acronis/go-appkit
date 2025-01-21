@@ -403,6 +403,6 @@ func (c *Config) Set(dp config.DataProvider) error {
 }
 
 // SetProviderDefaults is part of config interface implementation.
-func (c *Config) SetProviderDefaults(_ config.DataProvider) {
-	c.Timeout = DefaultClientWaitTimeout
+func (c *Config) SetProviderDefaults(dp config.DataProvider) {
+	dp.SetDefault(cfgKeyTimeout, DefaultClientWaitTimeout)
 }
