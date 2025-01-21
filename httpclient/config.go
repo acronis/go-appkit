@@ -378,22 +378,23 @@ func (c *Config) Set(dp config.DataProvider) error {
 	}
 	c.Timeout = timeout
 
-	err = c.Retries.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
+	prefixedDP := config.NewKeyPrefixedDataProvider(dp, c.keyPrefix)
+	err = c.Retries.Set(prefixedDP)
 	if err != nil {
 		return err
 	}
 
-	err = c.RateLimits.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
+	err = c.RateLimits.Set(prefixedDP)
 	if err != nil {
 		return err
 	}
 
-	err = c.Log.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
+	err = c.Log.Set(prefixedDP)
 	if err != nil {
 		return err
 	}
 
-	err = c.Metrics.Set(config.NewKeyPrefixedDataProvider(dp, c.keyPrefix))
+	err = c.Metrics.Set(prefixedDP)
 	if err != nil {
 		return err
 	}
