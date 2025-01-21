@@ -36,7 +36,7 @@ type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
-	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'
+	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'.
 	ClientType string
 
 	// Delegate is the next RoundTripper in the chain.
@@ -51,7 +51,7 @@ type Opts struct {
 	// MetricsCollector is a metrics collector.
 	MetricsCollector MetricsCollector
 
-	// ClassifyRequest does request classification, producing non-parameterized summary for given request.
+	// ClassifyRequest does request classification, producing non-parameterized summary in metrics round tripper.
 	ClassifyRequest func(r *http.Request, clientType string) string
 }
 
