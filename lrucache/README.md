@@ -1,9 +1,19 @@
-/*
-Copyright © 2024 Acronis International GmbH.
+# LRUCache
 
-Released under MIT license.
-*/
+[![GoDoc Widget]][GoDoc]
 
+The `lrucache` package provides an in-memory cache with an LRU (Least Recently Used) eviction policy and Prometheus metrics integration.
+
+## Features
+
+- **LRU Eviction Policy**: Automatically removes the least recently used items when the cache reaches its maximum size.
+- **Prometheus Metrics**: Collects and exposes metrics to monitor cache usage and performance.
+
+## Usage
+
+### Basic Example
+
+```go
 package lrucache_test
 
 import (
@@ -83,3 +93,24 @@ func Example() {
 	// Users: 2
 	// Posts: 1
 }
+```
+
+### Prometheus Metrics
+
+Here is the full list of Prometheus metrics exposed by the `lrucache` package:
+
+- `cache_entries_amount`: Total number of entries in the cache.
+- `cache_hits_total`: Number of successfully found keys in the cache.
+- `cache_misses_total`: Number of not found keys in the cache.
+- `cache_evictions_total`: Number of evicted entries.
+
+These metrics can be further customized with namespaces, constant labels, and curried labels as shown in the examples.
+
+## License
+
+Copyright © 2024 Acronis International GmbH.
+
+Licensed under [MIT License](./../LICENSE).
+
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/lrucache
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg
