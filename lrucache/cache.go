@@ -8,18 +8,23 @@ package lrucache
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 type cacheEntry[K comparable, V any] struct {
-	key   K
-	value V
+	key       K
+	value     V
+	expiresAt time.Time
 }
 
 // LRUCache represents an LRU cache with eviction mechanism and Prometheus metrics.
 type LRUCache[K comparable, V any] struct {
 	maxEntries int
+
+	defaultTTL time.Duration
 
 	mu      sync.RWMutex
 	lruList *list.List
@@ -28,19 +33,39 @@ type LRUCache[K comparable, V any] struct {
 	metricsCollector MetricsCollector
 }
 
-// New creates a new LRUCache with the provided maximum number of entries.
+// Options represents options for the cache.
+type Options struct {
+	// DefaultTTL is the default TTL for the cache entries.
+	// Please note that expired entries are not removed immediately,
+	// but only when they are accessed or during periodic cleanup (see RunPeriodicCleanup).
+	DefaultTTL time.Duration
+}
+
+// New creates a new LRUCache with the provided maximum number of entries and metrics collector.
 func New[K comparable, V any](maxEntries int, metricsCollector MetricsCollector) (*LRUCache[K, V], error) {
+	return NewWithOpts[K, V](maxEntries, metricsCollector, Options{})
+}
+
+// NewWithOpts creates a new LRUCache with the provided maximum number of entries, metrics collector, and options.
+// Metrics collector is used to collect statistics about cache usage.
+// It can be nil, in this case, metrics will be disabled.
+func NewWithOpts[K comparable, V any](maxEntries int, metricsCollector MetricsCollector, opts Options) (*LRUCache[K, V], error) {
 	if maxEntries <= 0 {
 		return nil, fmt.Errorf("maxEntries must be greater than 0")
+	}
+	if opts.DefaultTTL < 0 {
+		return nil, fmt.Errorf("defaultTTL must be greater or equal to 0 (no expiration)")
 	}
 	if metricsCollector == nil {
 		metricsCollector = disabledMetrics{}
 	}
+
 	return &LRUCache[K, V]{
 		maxEntries:       maxEntries,
 		lruList:          list.New(),
 		cache:            make(map[K]*list.Element),
 		metricsCollector: metricsCollector,
+		defaultTTL:       opts.DefaultTTL,
 	}, nil
 }
 
@@ -54,26 +79,54 @@ func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 // Add adds a value to the cache with the provided key and type.
 // If the cache is full, the oldest entry will be removed.
 func (c *LRUCache[K, V]) Add(key K, value V) {
+	c.AddWithTTL(key, value, c.defaultTTL)
+}
+
+// AddWithTTL adds a value to the cache with the provided key, type, and TTL.
+// If the cache is full, the oldest entry will be removed.
+// Please note that expired entries are not removed immediately,
+// but only when they are accessed or during periodic cleanup (see RunPeriodicCleanup).
+func (c *LRUCache[K, V]) AddWithTTL(key K, value V, ttl time.Duration) {
+	var expiresAt time.Time
+	if ttl > 0 {
+		expiresAt = time.Now().Add(ttl)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if elem, ok := c.cache[key]; ok {
 		c.lruList.MoveToFront(elem)
-		elem.Value = &cacheEntry[K, V]{key: key, value: value}
+		elem.Value = &cacheEntry[K, V]{key: key, value: value, expiresAt: expiresAt}
 		return
 	}
-	c.addNew(key, value)
+	c.addNew(key, value, expiresAt)
 }
 
+// GetOrAdd returns a value from the cache by the provided key.
+// If the key does not exist, it adds a new value to the cache.
 func (c *LRUCache[K, V]) GetOrAdd(key K, valueProvider func() V) (value V, exists bool) {
+	return c.GetOrAddWithTTL(key, valueProvider, c.defaultTTL)
+}
+
+// GetOrAddWithTTL returns a value from the cache by the provided key.
+// If the key does not exist, it adds a new value to the cache with the provided TTL.
+// Please note that expired entries are not removed immediately,
+// but only when they are accessed or during periodic cleanup (see RunPeriodicCleanup).
+func (c *LRUCache[K, V]) GetOrAddWithTTL(key K, valueProvider func() V, ttl time.Duration) (value V, exists bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if value, exists = c.get(key); exists {
 		return value, exists
 	}
+
+	var expiresAt time.Time
+	if ttl > 0 {
+		expiresAt = time.Now().Add(ttl)
+	}
 	value = valueProvider()
-	c.addNew(key, value)
+	c.addNew(key, value, expiresAt)
 	return value, false
 }
 
@@ -136,17 +189,26 @@ func (c *LRUCache[K, V]) Len() int {
 }
 
 func (c *LRUCache[K, V]) get(key K) (value V, ok bool) {
-	if elem, hit := c.cache[key]; hit {
-		c.lruList.MoveToFront(elem)
-		c.metricsCollector.IncHits()
-		return elem.Value.(*cacheEntry[K, V]).value, true
+	elem, hit := c.cache[key]
+	if !hit {
+		c.metricsCollector.IncMisses()
+		return value, false
 	}
-	c.metricsCollector.IncMisses()
-	return value, false
+	entry := elem.Value.(*cacheEntry[K, V])
+	if !entry.expiresAt.IsZero() && entry.expiresAt.Before(time.Now()) {
+		c.lruList.Remove(elem)
+		delete(c.cache, key)
+		c.metricsCollector.SetAmount(len(c.cache))
+		c.metricsCollector.IncMisses()
+		return value, false
+	}
+	c.lruList.MoveToFront(elem)
+	c.metricsCollector.IncHits()
+	return entry.value, true
 }
 
-func (c *LRUCache[K, V]) addNew(key K, value V) {
-	c.cache[key] = c.lruList.PushFront(&cacheEntry[K, V]{key: key, value: value})
+func (c *LRUCache[K, V]) addNew(key K, value V, expiresAt time.Time) {
+	c.cache[key] = c.lruList.PushFront(&cacheEntry[K, V]{key: key, value: value, expiresAt: expiresAt})
 	if len(c.cache) <= c.maxEntries {
 		c.metricsCollector.SetAmount(len(c.cache))
 		return
@@ -165,4 +227,31 @@ func (c *LRUCache[K, V]) removeOldest() *cacheEntry[K, V] {
 	entry := elem.Value.(*cacheEntry[K, V])
 	delete(c.cache, entry.key)
 	return entry
+}
+
+// RunPeriodicCleanup runs a cycle of periodic cleanup of expired entries.
+// Entries without expiration time are not affected.
+// It's supposed to be run in a separate goroutine.
+func (c *LRUCache[K, V]) RunPeriodicCleanup(ctx context.Context, cleanupInterval time.Duration) {
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			c.mu.Lock()
+			for key, elem := range c.cache {
+				entry := elem.Value.(*cacheEntry[K, V])
+				if !entry.expiresAt.IsZero() && entry.expiresAt.Before(now) {
+					c.lruList.Remove(elem)
+					delete(c.cache, key)
+				}
+			}
+			c.metricsCollector.SetAmount(len(c.cache))
+			c.mu.Unlock()
+		}
+	}
 }

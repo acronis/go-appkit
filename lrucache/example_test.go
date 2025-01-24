@@ -7,8 +7,10 @@ Released under MIT license.
 package lrucache_test
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -37,7 +39,8 @@ func Example() {
 	// LRU cache for users.
 	const aliceUUID = "966971df-a592-4e7e-a309-52501016fa44"
 	const bobUUID = "848adf28-84c1-4259-97a2-acba7cf5c0b6"
-	usersCache, err := lrucache.New[string, User](100_000, promMetrics.MustCurryWith(prometheus.Labels{"entry_type": "user"}))
+	usersCache, err := lrucache.New[string, User](100_000,
+		promMetrics.MustCurryWith(prometheus.Labels{"entry_type": "user"}))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,10 +56,18 @@ func Example() {
 	// LRU cache for posts.
 	const post1UUID = "823e50c7-984d-4de3-8a09-92fa21d3cc3b"
 	const post2UUID = "24707009-ddf6-4e88-bd51-84ae236b7fda"
-	postsCache, err := lrucache.New[string, Post](1_000, promMetrics.MustCurryWith(prometheus.Labels{"entry_type": "note"}))
+	postsCache, err := lrucache.NewWithOpts[string, Post](1_000,
+		promMetrics.MustCurryWith(prometheus.Labels{"entry_type": "note"}), lrucache.Options{
+			DefaultTTL: 5 * time.Minute, // Expired entries are removed during cleanup (see RunPeriodicCleanup method) or when accessed.
+		})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	cleanupCtx, cleanupCancel := context.WithCancel(context.Background())
+	defer cleanupCancel()
+	go postsCache.RunPeriodicCleanup(cleanupCtx, 10*time.Minute) // Run cleanup every 10 minutes.
+
 	postsCache.Add(post1UUID, Post{post1UUID, "Lorem ipsum dolor sit amet..."})
 	if post, found := postsCache.Get(post1UUID); found {
 		fmt.Printf("Post: %s, %s\n", post.UUID, post.Text)

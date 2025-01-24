@@ -7,7 +7,9 @@ Released under MIT license.
 package lrucache
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -213,6 +215,130 @@ func TestLRUCache(t *testing.T) {
 			assertPrometheusMetrics(t, tt.postExpectedMetrics, postMetrics)
 		})
 	}
+}
+
+func TestLRUCache_TTL(t *testing.T) {
+	const ttl = 100 * time.Millisecond
+
+	tests := []struct {
+		name           string
+		defaultTTL     time.Duration
+		keySpecificTTL time.Duration
+		expectExpired  bool
+		sleepDuration  time.Duration
+	}{
+		{
+			name:          "defaultTTL small, expires",
+			defaultTTL:    ttl,
+			expectExpired: true,
+			sleepDuration: ttl * 2,
+		},
+		{
+			name:          "defaultTTL small, not expired if short sleep",
+			defaultTTL:    ttl,
+			expectExpired: false,
+			sleepDuration: ttl / 2,
+		},
+		{
+			name:           "no defaultTTL, customTTL small, expires",
+			keySpecificTTL: ttl,
+			expectExpired:  true,
+			sleepDuration:  ttl * 2,
+		},
+		{
+			name:           "no defaultTTL, customTTL small, not expired if short sleep",
+			keySpecificTTL: ttl,
+			expectExpired:  false,
+			sleepDuration:  ttl / 2,
+		},
+		{
+			name:           "both defaultTTL and customTTL are used",
+			defaultTTL:     ttl,
+			keySpecificTTL: ttl / 4,
+			sleepDuration:  ttl / 2,
+			expectExpired:  true,
+		},
+		{
+			name:          "no TTL, never expires",
+			expectExpired: false,
+			sleepDuration: ttl,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a cache with the given default TTL
+			cache, err := NewWithOpts[string, string](10, nil, Options{DefaultTTL: tt.defaultTTL})
+			require.NoError(t, err)
+
+			key, value := "some-key", "some-value"
+
+			if tt.keySpecificTTL != 0 {
+				cache.AddWithTTL(key, value, tt.keySpecificTTL)
+			} else {
+				cache.Add(key, value)
+			}
+
+			// Immediately after adding, we should be able to get the item
+			v, found := cache.Get(key)
+			require.True(t, found, "expected to find the item right after add")
+			require.Equal(t, value, v)
+
+			time.Sleep(tt.sleepDuration)
+
+			require.Equal(t, 1, cache.Len(),
+				"expected the item to still be in the cache, because it hasn't been accessed yet")
+
+			// Re-check item
+			v, found = cache.Get(key)
+			if tt.expectExpired {
+				require.False(t, found, "expected the item to be expired")
+				require.Equal(t, 0, cache.Len(), "expected the item to be removed from the cache")
+			} else {
+				require.True(t, found, "expected the item to still be in the cache")
+				require.Equal(t, value, v)
+			}
+		})
+	}
+}
+
+func TestLRUCache_PeriodicCleanup(t *testing.T) {
+	const ttl = 100 * time.Millisecond
+
+	// We'll create a short-lived item but never manually Get it.
+	// We'll rely on periodic cleanup to remove it from the cache.
+	cache, err := New[string, string](10, nil)
+	require.NoError(t, err)
+
+	// Start periodic cleanup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const cleanupInterval = ttl / 2
+	go cache.RunPeriodicCleanup(ctx, cleanupInterval)
+
+	const key1, value1 = "key1", "value1"
+	const key2, value2 = "key2", "value2"
+	cache.AddWithTTL(key1, value1, ttl)
+	cache.Add(key2, value2) // no TTL, should not be removed
+
+	// Immediately found
+	v, found := cache.Get(key1)
+	require.True(t, found)
+	require.Equal(t, value1, v)
+	v, found = cache.Get(key2)
+	require.True(t, found)
+	require.Equal(t, value2, v)
+	require.Equal(t, 2, cache.Len())
+
+	// Wait enough time for TTL to expire and cleanup to run
+	time.Sleep(ttl * 2)
+
+	// The item should be removed by periodic cleanup
+	require.Equal(t, 1, cache.Len())
+	_, found = cache.Get(key1)
+	require.False(t, found)
+	_, found = cache.Get(key2)
+	require.True(t, found)
 }
 
 type User struct {
