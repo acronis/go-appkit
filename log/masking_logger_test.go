@@ -99,7 +99,12 @@ var logFile = "output.log"
 
 func BenchmarkMaskingLogger(b *testing.B) {
 	defaultLogger, closer := log.NewLogger(&log.Config{
-		Output: log.OutputFile, Format: log.FormatJSON, Level: log.LevelInfo, ErrorVerboseSuffix: "_verbose", AddCaller: true, File: log.FileOutputConfig{
+		Output:    log.OutputFile,
+		Format:    log.FormatJSON,
+		Level:     log.LevelInfo,
+		Error:     log.ErrorConfig{VerboseSuffix: "_verbose"},
+		AddCaller: true,
+		File: log.FileOutputConfig{
 			Path: logFile,
 			Rotation: log.FileRotationConfig{
 				MaxSize: 2 << 30,

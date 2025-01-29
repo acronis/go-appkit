@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/acronis/go-appkit/log"
 )
@@ -111,7 +112,7 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 		delegate = NewLoggingRoundTripperWithOpts(delegate, logOpts)
 	}
 
-	return &http.Client{Transport: delegate, Timeout: cfg.Timeout}, nil
+	return &http.Client{Transport: delegate, Timeout: time.Duration(cfg.Timeout)}, nil
 }
 
 // MustNewWithOpts wraps delegate transports with options

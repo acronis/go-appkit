@@ -69,7 +69,13 @@ func TestLoggerToStd(t *testing.T) {
 		}
 
 		go func() {
-			logger, closer := NewLogger(&Config{Output: test.Output, NoColor: true, Format: FormatJSON, Level: LevelInfo, ErrorVerboseSuffix: "err"})
+			logger, closer := NewLogger(&Config{
+				Output:  test.Output,
+				NoColor: true,
+				Format:  FormatJSON,
+				Level:   LevelInfo,
+				Error:   ErrorConfig{VerboseSuffix: "err"}},
+			)
 			switch test.Level {
 			case LevelInfo:
 				logger.Info(test.Msg)
@@ -108,7 +114,13 @@ func TestTextFormat(t *testing.T) {
 	}()
 
 	go func() {
-		logger, closer := NewLogger(&Config{Output: OutputStderr, NoColor: true, Format: FormatText, Level: LevelInfo, ErrorVerboseSuffix: "err"})
+		logger, closer := NewLogger(&Config{
+			Output:  OutputStderr,
+			NoColor: true,
+			Format:  FormatText,
+			Level:   LevelInfo,
+			Error:   ErrorConfig{VerboseSuffix: "err"},
+		})
 		logger.AtLevel(LevelError, func(logFunc LogFunc) {
 			logFunc("test", logf.Error(errors.New("some error")))
 		})

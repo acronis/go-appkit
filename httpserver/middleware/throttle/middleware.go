@@ -289,7 +289,7 @@ func makeRateLimitMiddleware(
 		GetKey:             getKey,
 		MaxKeys:            cfg.MaxKeys,
 		BacklogLimit:       cfg.BacklogLimit,
-		BacklogTimeout:     cfg.BacklogTimeout,
+		BacklogTimeout:     time.Duration(cfg.BacklogTimeout),
 		ResponseStatusCode: cfg.getResponseStatusCode(),
 		GetRetryAfter:      getRetryAfter,
 		DryRun:             cfg.DryRun,
@@ -334,7 +334,7 @@ func makeInFlightLimitMiddleware(
 	var getRetryAfter func(r *http.Request) time.Duration
 	if cfg.ResponseRetryAfter != 0 {
 		getRetryAfter = func(_ *http.Request) time.Duration {
-			return cfg.ResponseRetryAfter
+			return time.Duration(cfg.ResponseRetryAfter)
 		}
 	}
 
@@ -372,7 +372,7 @@ func makeInFlightLimitMiddleware(
 		ResponseStatusCode: cfg.getResponseStatusCode(),
 		GetRetryAfter:      getRetryAfter,
 		BacklogLimit:       cfg.BacklogLimit,
-		BacklogTimeout:     cfg.BacklogTimeout,
+		BacklogTimeout:     time.Duration(cfg.BacklogTimeout),
 		DryRun:             cfg.DryRun,
 		OnReject:           onRejectWithMetrics,
 		OnRejectInDryRun:   onRejectInDryRunWithMetrics,

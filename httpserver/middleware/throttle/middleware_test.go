@@ -552,8 +552,7 @@ rules:
 		},
 	}
 	configLoader := config.NewLoader(config.NewViperAdapter())
-	for i := range tests {
-		tt := tests[i]
+	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			cfg := &Config{}
 			err := configLoader.LoadFromReader(bytes.NewReader([]byte(tt.CfgData)), config.DataTypeYAML, cfg)

@@ -424,8 +424,7 @@ func TestCheckErrorIsTemporary(t *testing.T) {
 			WantErr:       "EOF",
 		},
 	}
-	for i := range tests {
-		tt := tests[i]
+	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
 			req, err := http.NewRequest(tt.ReqMethod, tt.ReqURL, nil)
 			require.NoError(t, err)

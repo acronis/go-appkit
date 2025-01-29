@@ -7,12 +7,15 @@ Released under MIT license.
 package restapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // RoutePath represents route's path.
@@ -69,6 +72,34 @@ func ParseRoutePath(rp string) (RoutePath, error) {
 func (rp *RoutePath) UnmarshalText(text []byte) (err error) {
 	*rp, err = ParseRoutePath(string(text))
 	return
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (rp *RoutePath) UnmarshalYAML(value *yaml.Node) error {
+	var text string
+	if err := value.Decode(&text); err != nil {
+		return err
+	}
+	parsed, err := ParseRoutePath(text)
+	if err != nil {
+		return err
+	}
+	*rp = parsed
+	return nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (rp *RoutePath) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	parsed, err := ParseRoutePath(text)
+	if err != nil {
+		return err
+	}
+	*rp = parsed
+	return nil
 }
 
 // Route represents route for handling.
@@ -217,10 +248,10 @@ func (r *RoutesManager) SearchRoute(normalizedPath string, method string, exclud
 type RouteConfig struct {
 	// Path is a struct that contains info about route path.
 	// ParseRoutePath function should be used for constructing it from the string representation.
-	Path RoutePath `mapstructure:"path"`
+	Path RoutePath `mapstructure:"path" yaml:"path" json:"path"`
 
 	// Methods is a list of case-insensitive HTTP verbs/methods.
-	Methods []string `mapstructure:"methods"`
+	Methods MethodsList `mapstructure:"methods" yaml:"methods" json:"methods"`
 }
 
 // MethodsInUpperCase returns list of route's methods in upper-case.
@@ -273,4 +304,55 @@ func NormalizeURLPath(urlPath string) string {
 		res += "/"
 	}
 	return res
+}
+
+// MethodsList represents a list of HTTP methods.
+type MethodsList []string
+
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+func (ml *MethodsList) UnmarshalText(text []byte) error {
+	ml.unmarshal(string(text))
+	return nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (ml *MethodsList) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		ml.unmarshal(s)
+		return nil
+	}
+	var l []string
+	if err := json.Unmarshal(data, &l); err == nil {
+		*ml = l
+		return nil
+	}
+	return fmt.Errorf("invalid methods list: %s", data)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (ml *MethodsList) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err == nil {
+		ml.unmarshal(s)
+		return nil
+	}
+	var l []string
+	if err := value.Decode(&l); err == nil {
+		*ml = l
+		return nil
+	}
+	return fmt.Errorf("invalid methods list: %v", value)
+}
+
+func (ml *MethodsList) unmarshal(data string) {
+	data = strings.TrimSpace(data)
+	if data == "" {
+		*ml = MethodsList{}
+		return
+	}
+	methods := strings.Split(data, ",")
+	for _, m := range methods {
+		*ml = append(*ml, strings.TrimSpace(m))
+	}
 }

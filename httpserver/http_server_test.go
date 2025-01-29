@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/require"
 
+	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/httpserver/middleware"
 	"github.com/acronis/go-appkit/log"
 	"github.com/acronis/go-appkit/log/logtest"
@@ -300,7 +301,11 @@ func TestHTTPServer_Stop(t *testing.T) {
 	t.Run("with gracefully shutdown", func(t *testing.T) {
 		addr := testutil.GetLocalAddrWithFreeTCPPort()
 
-		httpServer, err := New(&Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: time.Second * 3}}, logtest.NewLogger(), opts)
+		serverCfg := &Config{
+			Address:  addr,
+			Timeouts: TimeoutsConfig{Shutdown: config.TimeDuration(time.Second * 3)},
+		}
+		httpServer, err := New(serverCfg, logtest.NewLogger(), opts)
 		require.NoError(t, err)
 		fatalErr := make(chan error, 1)
 		go httpServer.Start(fatalErr)
@@ -333,7 +338,8 @@ func TestHTTPServer_Stop(t *testing.T) {
 	t.Run("w/o gracefully shutdown", func(t *testing.T) {
 		addr := testutil.GetLocalAddrWithFreeTCPPort()
 
-		httpServer, err := New(&Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: time.Second * 3}}, logtest.NewLogger(), opts)
+		serverCfg := &Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: config.TimeDuration(time.Second * 3)}}
+		httpServer, err := New(serverCfg, logtest.NewLogger(), opts)
 		require.NoError(t, err)
 		fatalErr := make(chan error, 1)
 		go httpServer.Start(fatalErr)
@@ -375,17 +381,17 @@ func TestHTTPServer_Stop_Without_Start(t *testing.T) {
 
 	t.Run("with graceful shutdown", func(t *testing.T) {
 		addr := testutil.GetLocalAddrWithFreeTCPPort()
-		httpServer, err := New(&Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: time.Second * 3}}, logtest.NewLogger(), opts)
+		serverCfg := &Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: config.TimeDuration(time.Second * 3)}}
+		httpServer, err := New(serverCfg, logtest.NewLogger(), opts)
 		require.NoError(t, err)
-
 		require.NoError(t, httpServer.Stop(true))
 	})
 
 	t.Run("w/o graceful shutdown", func(t *testing.T) {
 		addr := testutil.GetLocalAddrWithFreeTCPPort()
-		httpServer, err := New(&Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: time.Second * 3}}, logtest.NewLogger(), opts)
+		serverCfg := &Config{Address: addr, Timeouts: TimeoutsConfig{Shutdown: config.TimeDuration(time.Second * 3)}}
+		httpServer, err := New(serverCfg, logtest.NewLogger(), opts)
 		require.NoError(t, err)
-
 		require.NoError(t, httpServer.Stop(false))
 	})
 }

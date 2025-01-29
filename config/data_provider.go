@@ -50,6 +50,8 @@ type DataProvider interface {
 	GetDuration(key string) (time.Duration, error)
 	GetSizeInBytes(key string) (uint64, error)
 	GetStringMapString(key string) (map[string]string, error)
+	GetBytesCount(key string) (BytesCount, error)
+
 	Unmarshal(rawVal interface{}, opts ...DecoderConfigOption) error
 	UnmarshalKey(key string, rawVal interface{}, opts ...DecoderConfigOption) error
 
