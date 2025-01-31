@@ -20,8 +20,7 @@ import (
 type RetryPolicy string
 
 const (
-	// DefaultClientWaitTimeout is a default timeout for a client to wait for a request.
-	DefaultClientWaitTimeout = 10 * time.Second
+	DefaultTimeout = time.Minute
 
 	// RetryPolicyExponential is a policy for exponential retries.
 	RetryPolicyExponential RetryPolicy = "exponential"
@@ -50,105 +49,138 @@ const (
 var _ config.Config = (*Config)(nil)
 var _ config.KeyPrefixProvider = (*Config)(nil)
 
-// RateLimitsConfig represents configuration options for HTTP client rate limits.
-type RateLimitsConfig struct {
-	// Enabled is a flag that enables rate limiting.
-	Enabled bool
+// Config represents options for HTTP client configuration.
+// Configuration can be loaded in different formats (YAML, JSON) using config.Loader, viper,
+// or with json.Unmarshal/yaml.Unmarshal functions directly.
+type Config struct {
+	// Retries is a configuration for HTTP client retries policy.
+	Retries RetriesConfig `mapstructure:"retries" yaml:"retries" json:"retries"`
 
-	// Limit is the maximum number of requests that can be made.
-	Limit int
+	// RateLimits is a configuration for HTTP client rate limits.
+	RateLimits RateLimitsConfig `mapstructure:"rateLimits" yaml:"rateLimits" json:"rateLimits"`
 
-	// Burst allow temporary spikes in request rate.
-	Burst int
+	// Log is a configuration for HTTP client logs.
+	Log LogConfig `mapstructure:"log" yaml:"log" json:"log"`
 
-	// WaitTimeout is the maximum time to wait for a request to be made.
-	WaitTimeout time.Duration
+	// Metrics is a configuration for HTTP client metrics.
+	Metrics MetricsConfig `mapstructure:"metrics" yaml:"metrics" json:"metrics"`
+
+	// Timeout is the maximum time to wait for a request to be made.
+	Timeout config.TimeDuration `mapstructure:"timeout" yaml:"timeout" json:"timeout"`
+
+	// keyPrefix is a prefix for configuration parameters.
+	keyPrefix string
 }
 
-// Set is part of config interface implementation.
-func (c *RateLimitsConfig) Set(dp config.DataProvider) (err error) {
-	enabled, err := dp.GetBool(cfgKeyRateLimitsEnabled)
-	if err != nil {
-		return err
-	}
-	c.Enabled = enabled
+// ConfigOption is a type for functional options for the Config.
+type ConfigOption func(*configOptions)
 
-	if !c.Enabled {
-		return nil
-	}
+type configOptions struct {
+	keyPrefix string
+}
 
-	limit, err := dp.GetInt(cfgKeyRateLimitsLimit)
-	if err != nil {
-		return err
+// WithKeyPrefix returns a ConfigOption that sets a key prefix for parsing configuration parameters.
+// This prefix will be used by config.Loader.
+func WithKeyPrefix(keyPrefix string) ConfigOption {
+	return func(o *configOptions) {
+		o.keyPrefix = keyPrefix
 	}
-	if limit <= 0 {
-		return dp.WrapKeyErr(cfgKeyRateLimitsLimit, errors.New("must be positive"))
-	}
-	c.Limit = limit
+}
 
-	burst, err := dp.GetInt(cfgKeyRateLimitsBurst)
-	if err != nil {
-		return err
+// NewConfig creates a new instance of the Config.
+func NewConfig(options ...ConfigOption) *Config {
+	var opts configOptions
+	for _, opt := range options {
+		opt(&opts)
 	}
-	if burst < 0 {
-		return dp.WrapKeyErr(cfgKeyRateLimitsBurst, errors.New("must be positive"))
-	}
-	c.Burst = burst
+	return &Config{keyPrefix: opts.keyPrefix}
+}
 
-	waitTimeout, err := dp.GetDuration(cfgKeyRateLimitsWaitTimeout)
-	if err != nil {
-		return err
-	}
-	if waitTimeout < 0 {
-		return dp.WrapKeyErr(cfgKeyRateLimitsWaitTimeout, errors.New("must be positive"))
-	}
-	c.WaitTimeout = waitTimeout
+// NewConfigWithKeyPrefix creates a new instance of the Config with a key prefix.
+// This prefix will be used by config.Loader.
+// Deprecated: use NewConfig with WithKeyPrefix instead.
+func NewConfigWithKeyPrefix(keyPrefix string) *Config {
+	return &Config{keyPrefix: keyPrefix}
+}
 
-	return nil
+// NewDefaultConfig creates a new instance of the Config with default values.
+func NewDefaultConfig(options ...ConfigOption) *Config {
+	var opts configOptions
+	for _, opt := range options {
+		opt(&opts)
+	}
+	return &Config{
+		keyPrefix: opts.keyPrefix,
+		Timeout:   config.TimeDuration(DefaultTimeout),
+	}
+}
+
+// KeyPrefix returns a key prefix with which all configuration parameters should be presented.
+// Implements config.KeyPrefixProvider interface.
+func (c *Config) KeyPrefix() string {
+	return c.keyPrefix
 }
 
 // SetProviderDefaults is part of config interface implementation.
-func (c *RateLimitsConfig) SetProviderDefaults(_ config.DataProvider) {}
+// Implements config.Config interface.
+func (c *Config) SetProviderDefaults(dp config.DataProvider) {
+	dp.SetDefault(cfgKeyTimeout, DefaultTimeout)
+}
+
+// RateLimitsConfig represents configuration options for HTTP client rate limits.
+type RateLimitsConfig struct {
+	// Enabled is a flag that enables rate limiting.
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+
+	// Limit is the maximum number of requests that can be made.
+	Limit int `mapstructure:"limit" yaml:"limit" json:"limit"`
+
+	// Burst allow temporary spikes in request rate.
+	Burst int `mapstructure:"burst" yaml:"burst" json:"burst"`
+
+	// WaitTimeout is the maximum time to wait for a request to be made.
+	WaitTimeout config.TimeDuration `mapstructure:"waitTimeout" yaml:"waitTimeout" json:"waitTimeout"`
+}
 
 // TransportOpts returns transport options.
 func (c *RateLimitsConfig) TransportOpts() RateLimitingRoundTripperOpts {
 	return RateLimitingRoundTripperOpts{
 		Burst:       c.Burst,
-		WaitTimeout: c.WaitTimeout,
+		WaitTimeout: time.Duration(c.WaitTimeout),
 	}
 }
 
 // ExponentialBackoffConfig represents configuration options for exponential backoff.
 type ExponentialBackoffConfig struct {
 	// InitialInterval is the initial interval for exponential backoff.
-	InitialInterval time.Duration
+	InitialInterval config.TimeDuration `mapstructure:"initialInterval" yaml:"initialInterval" json:"initialInterval"`
 
 	// Multiplier is the multiplier for exponential backoff.
-	Multiplier float64
+	Multiplier float64 `mapstructure:"multiplier" yaml:"multiplier" json:"multiplier"`
 }
 
 // ConstantBackoffConfig represents configuration options for constant backoff.
 type ConstantBackoffConfig struct {
 	// Interval is the interval for constant backoff.
-	Interval time.Duration
+	Interval config.TimeDuration `mapstructure:"interval" yaml:"interval" json:"interval"`
 }
 
 // RetriesConfig represents configuration options for HTTP client retries policy.
 type RetriesConfig struct {
 	// Enabled is a flag that enables retries.
-	Enabled bool
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
 
 	// MaxAttempts is the maximum number of attempts to retry the request.
-	MaxAttempts int
+	MaxAttempts int `mapstructure:"maxAttempts" yaml:"maxAttempts" json:"maxAttempts"`
 
 	// Policy of a retry: [exponential, constant].
-	Policy RetryPolicy
+	Policy RetryPolicy `mapstructure:"policy" yaml:"policy" json:"policy"`
 
 	// ExponentialBackoff is the configuration for exponential backoff.
-	ExponentialBackoff ExponentialBackoffConfig
+	ExponentialBackoff ExponentialBackoffConfig `mapstructure:"exponentialBackoff" yaml:"exponentialBackoff" json:"exponentialBackoff"`
 
 	// ConstantBackoff is the configuration for constant backoff.
-	ConstantBackoff ConstantBackoffConfig
+	ConstantBackoff ConstantBackoffConfig `mapstructure:"constantBackoff" yaml:"constantBackoff" json:"constantBackoff"`
 }
 
 // GetPolicy returns a retry policy based on strategy or nil if none is provided.
@@ -156,14 +188,14 @@ func (c *RetriesConfig) GetPolicy() retry.Policy {
 	if c.Policy == RetryPolicyExponential {
 		return retry.PolicyFunc(func() backoff.BackOff {
 			bf := backoff.NewExponentialBackOff()
-			bf.InitialInterval = c.ExponentialBackoff.InitialInterval
+			bf.InitialInterval = time.Duration(c.ExponentialBackoff.InitialInterval)
 			bf.Multiplier = c.ExponentialBackoff.Multiplier
 			bf.Reset()
 			return bf
 		})
 	} else if c.Policy == RetryPolicyConstant {
 		return retry.PolicyFunc(func() backoff.BackOff {
-			bf := backoff.NewConstantBackOff(c.ConstantBackoff.Interval)
+			bf := backoff.NewConstantBackOff(time.Duration(c.ConstantBackoff.Interval))
 			bf.Reset()
 			return bf
 		})
@@ -172,15 +204,69 @@ func (c *RetriesConfig) GetPolicy() retry.Policy {
 	return nil
 }
 
-// Set is part of config interface implementation.
-func (c *RetriesConfig) Set(dp config.DataProvider) error {
+// TransportOpts returns transport options.
+func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
+	return RetryableRoundTripperOpts{MaxRetryAttempts: c.MaxAttempts}
+}
+
+// LogConfig represents configuration options for HTTP client logs.
+type LogConfig struct {
+	// Enabled is a flag that enables logging.
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+
+	// SlowRequestThreshold is a threshold for slow requests.
+	SlowRequestThreshold config.TimeDuration `mapstructure:"slowRequestThreshold" yaml:"slowRequestThreshold" json:"slowRequestThreshold"`
+
+	// Mode of logging: [all, failed]. 'all' by default.
+	Mode LoggingMode `mapstructure:"mode" yaml:"mode" json:"mode"`
+}
+
+// TransportOpts returns transport options.
+func (c *LogConfig) TransportOpts() LoggingRoundTripperOpts {
+	return LoggingRoundTripperOpts{
+		Mode:                 c.Mode,
+		SlowRequestThreshold: time.Duration(c.SlowRequestThreshold),
+	}
+}
+
+// MetricsConfig represents configuration options for HTTP client logs.
+type MetricsConfig struct {
+	// Enabled is a flag that enables metrics.
+	Enabled bool `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+}
+
+// Set sets http client configuration based on the passed config.DataProvider.
+// Implements config.Config interface.
+func (c *Config) Set(dp config.DataProvider) error {
+	timeout, err := dp.GetDuration(cfgKeyTimeout)
+	if err != nil {
+		return err
+	}
+	c.Timeout = config.TimeDuration(timeout)
+
+	if err := c.setRetries(dp); err != nil {
+		return err
+	}
+	if err := c.setRateLimits(dp); err != nil {
+		return err
+	}
+	if err := c.setLog(dp); err != nil {
+		return err
+	}
+	if err := c.setMetrics(dp); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Config) setRetries(dp config.DataProvider) error {
 	enabled, err := dp.GetBool(cfgKeyRetriesEnabled)
 	if err != nil {
 		return err
 	}
-	c.Enabled = enabled
+	c.Retries.Enabled = enabled
 
-	if !c.Enabled {
+	if !c.Retries.Enabled {
 		return nil
 	}
 
@@ -191,36 +277,27 @@ func (c *RetriesConfig) Set(dp config.DataProvider) error {
 	if maxAttempts < 0 {
 		return dp.WrapKeyErr(cfgKeyRetriesMax, errors.New("must be positive"))
 	}
-	c.MaxAttempts = maxAttempts
+	c.Retries.MaxAttempts = maxAttempts
 
-	return c.setPolicy(dp)
+	return c.setRetriesPolicy(dp)
 }
 
-// SetProviderDefaults is part of config interface implementation.
-func (c *RetriesConfig) SetProviderDefaults(_ config.DataProvider) {}
-
-// TransportOpts returns transport options.
-func (c *RetriesConfig) TransportOpts() RetryableRoundTripperOpts {
-	return RetryableRoundTripperOpts{MaxRetryAttempts: c.MaxAttempts}
-}
-
-// setPolicy sets the policy based on the configuration.
-func (c *RetriesConfig) setPolicy(dp config.DataProvider) error {
+func (c *Config) setRetriesPolicy(dp config.DataProvider) error {
 	policy, err := dp.GetString(cfgKeyRetriesPolicy)
 	if err != nil {
 		return err
 	}
-	c.Policy = RetryPolicy(policy)
+	c.Retries.Policy = RetryPolicy(policy)
 
-	if c.Policy != "" && c.Policy != RetryPolicyExponential && c.Policy != RetryPolicyConstant {
+	if c.Retries.Policy != "" && c.Retries.Policy != RetryPolicyExponential && c.Retries.Policy != RetryPolicyConstant {
 		return dp.WrapKeyErr(cfgKeyRetriesPolicy, errors.New("must be one of: [exponential, constant]"))
 	}
 
-	if c.Policy == RetryPolicyExponential {
+	if c.Retries.Policy == RetryPolicyExponential {
 		var interval time.Duration
 		interval, err = dp.GetDuration(cfgKeyRetriesPolicyExponentialInitialInterval)
 		if err != nil {
-			return nil
+			return err
 		}
 		if interval < 0 {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialInitialInterval, errors.New("must be positive"))
@@ -235,13 +312,15 @@ func (c *RetriesConfig) setPolicy(dp config.DataProvider) error {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyExponentialMultiplier, errors.New("must be greater than 1"))
 		}
 
-		c.ExponentialBackoff = ExponentialBackoffConfig{
-			InitialInterval: interval,
+		c.Retries.ExponentialBackoff = ExponentialBackoffConfig{
+			InitialInterval: config.TimeDuration(interval),
 			Multiplier:      multiplier,
 		}
 
 		return nil
-	} else if c.Policy == RetryPolicyConstant {
+	}
+
+	if c.Retries.Policy == RetryPolicyConstant {
 		var interval time.Duration
 		interval, err = dp.GetDuration(cfgKeyRetriesPolicyConstantInternal)
 		if err != nil {
@@ -250,33 +329,61 @@ func (c *RetriesConfig) setPolicy(dp config.DataProvider) error {
 		if interval < 0 {
 			return dp.WrapKeyErr(cfgKeyRetriesPolicyConstantInternal, errors.New("must be positive"))
 		}
-		c.ConstantBackoff = ConstantBackoffConfig{Interval: interval}
+		c.Retries.ConstantBackoff = ConstantBackoffConfig{Interval: config.TimeDuration(interval)}
 	}
 
 	return nil
 }
 
-// LogConfig represents configuration options for HTTP client logs.
-type LogConfig struct {
-	// Enabled is a flag that enables logging.
-	Enabled bool
+func (c *Config) setRateLimits(dp config.DataProvider) (err error) {
+	enabled, err := dp.GetBool(cfgKeyRateLimitsEnabled)
+	if err != nil {
+		return err
+	}
+	c.RateLimits.Enabled = enabled
 
-	// SlowRequestThreshold is a threshold for slow requests.
-	SlowRequestThreshold time.Duration
+	if !c.RateLimits.Enabled {
+		return nil
+	}
 
-	// Mode of logging: [all, failed]. 'all' by default.
-	Mode LoggingMode
+	limit, err := dp.GetInt(cfgKeyRateLimitsLimit)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
+		return dp.WrapKeyErr(cfgKeyRateLimitsLimit, errors.New("must be positive"))
+	}
+	c.RateLimits.Limit = limit
+
+	burst, err := dp.GetInt(cfgKeyRateLimitsBurst)
+	if err != nil {
+		return err
+	}
+	if burst < 0 {
+		return dp.WrapKeyErr(cfgKeyRateLimitsBurst, errors.New("must be positive"))
+	}
+	c.RateLimits.Burst = burst
+
+	waitTimeout, err := dp.GetDuration(cfgKeyRateLimitsWaitTimeout)
+	if err != nil {
+		return err
+	}
+	if waitTimeout < 0 {
+		return dp.WrapKeyErr(cfgKeyRateLimitsWaitTimeout, errors.New("must be positive"))
+	}
+	c.RateLimits.WaitTimeout = config.TimeDuration(waitTimeout)
+
+	return nil
 }
 
-// Set is part of config interface implementation.
-func (c *LogConfig) Set(dp config.DataProvider) error {
+func (c *Config) setLog(dp config.DataProvider) error {
 	enabled, err := dp.GetBool(cfgKeyLogEnabled)
 	if err != nil {
 		return err
 	}
-	c.Enabled = enabled
+	c.Log.Enabled = enabled
 
-	if !c.Enabled {
+	if !c.Log.Enabled {
 		return nil
 	}
 
@@ -287,7 +394,7 @@ func (c *LogConfig) Set(dp config.DataProvider) error {
 	if slowRequestThreshold < 0 {
 		return dp.WrapKeyErr(cfgKeyLogSlowRequestThreshold, errors.New("can not be negative"))
 	}
-	c.SlowRequestThreshold = slowRequestThreshold
+	c.Log.SlowRequestThreshold = config.TimeDuration(slowRequestThreshold)
 
 	mode, err := dp.GetString(cfgKeyLogMode)
 	if err != nil {
@@ -297,112 +404,17 @@ func (c *LogConfig) Set(dp config.DataProvider) error {
 	if !loggingMode.IsValid() {
 		return dp.WrapKeyErr(cfgKeyLogMode, errors.New("choose one of: [all, failed]"))
 	}
-	c.Mode = loggingMode
+	c.Log.Mode = loggingMode
 
 	return nil
 }
 
-// SetProviderDefaults is part of config interface implementation.
-func (c *LogConfig) SetProviderDefaults(_ config.DataProvider) {}
-
-// TransportOpts returns transport options.
-func (c *LogConfig) TransportOpts() LoggingRoundTripperOpts {
-	return LoggingRoundTripperOpts{
-		Mode:                 c.Mode,
-		SlowRequestThreshold: c.SlowRequestThreshold,
-	}
-}
-
-// MetricsConfig represents configuration options for HTTP client logs.
-type MetricsConfig struct {
-	// Enabled is a flag that enables metrics.
-	Enabled bool
-}
-
-// Set is part of config interface implementation.
-func (c *MetricsConfig) Set(dp config.DataProvider) error {
+func (c *Config) setMetrics(dp config.DataProvider) error {
 	enabled, err := dp.GetBool(cfgKeyMetricsEnabled)
 	if err != nil {
 		return err
 	}
-	c.Enabled = enabled
+	c.Metrics.Enabled = enabled
 
 	return nil
-}
-
-// SetProviderDefaults is part of config interface implementation.
-func (c *MetricsConfig) SetProviderDefaults(_ config.DataProvider) {}
-
-// Config represents options for HTTP client configuration.
-type Config struct {
-	// Retries is a configuration for HTTP client retries policy.
-	Retries RetriesConfig
-
-	// RateLimits is a configuration for HTTP client rate limits.
-	RateLimits RateLimitsConfig
-
-	// Log is a configuration for HTTP client logs.
-	Log LogConfig
-
-	// Metrics is a configuration for HTTP client metrics.
-	Metrics MetricsConfig
-
-	// Timeout is the maximum time to wait for a request to be made.
-	Timeout time.Duration
-
-	// keyPrefix is a prefix for configuration parameters.
-	keyPrefix string
-}
-
-// NewConfig creates a new instance of the Config.
-func NewConfig() *Config {
-	return NewConfigWithKeyPrefix("")
-}
-
-// NewConfigWithKeyPrefix creates a new instance of the Config.
-// Allows specifying key prefix which will be used for parsing configuration parameters.
-func NewConfigWithKeyPrefix(keyPrefix string) *Config {
-	return &Config{keyPrefix: keyPrefix}
-}
-
-// KeyPrefix returns a key prefix with which all configuration parameters should be presented.
-func (c *Config) KeyPrefix() string {
-	return c.keyPrefix
-}
-
-// Set is part of config interface implementation.
-func (c *Config) Set(dp config.DataProvider) error {
-	timeout, err := dp.GetDuration(cfgKeyTimeout)
-	if err != nil {
-		return err
-	}
-	c.Timeout = timeout
-
-	prefixedDP := config.NewKeyPrefixedDataProvider(dp, c.keyPrefix)
-	err = c.Retries.Set(prefixedDP)
-	if err != nil {
-		return err
-	}
-
-	err = c.RateLimits.Set(prefixedDP)
-	if err != nil {
-		return err
-	}
-
-	err = c.Log.Set(prefixedDP)
-	if err != nil {
-		return err
-	}
-
-	err = c.Metrics.Set(prefixedDP)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// SetProviderDefaults is part of config interface implementation.
-func (c *Config) SetProviderDefaults(dp config.DataProvider) {
-	dp.SetDefault(cfgKeyTimeout, DefaultClientWaitTimeout)
 }

@@ -8,83 +8,225 @@ package httpserver
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/acronis/go-appkit/config"
 )
 
+type AppConfig struct {
+	Server *Config `mapstructure:"server" json:"server" yaml:"server"`
+}
+
 func TestConfig(t *testing.T) {
-	requireDuration := func(wantStr string, got time.Duration) {
-		want, err := time.ParseDuration(wantStr)
-		require.NoError(t, err)
-		require.Equal(t, want, got)
-	}
-
-	t.Run("default values", func(t *testing.T) {
-		cfgData := bytes.NewBuffer(nil)
-		cfg := Config{}
-		err := config.NewDefaultLoader("").LoadFromReader(cfgData, config.DataTypeYAML, &cfg)
-		require.NoError(t, err)
-		require.Equal(t, defaultServerAddress, cfg.Address)
-		requireDuration(defaultServerTimeoutsWrite, cfg.Timeouts.Write)
-		requireDuration(defaultServerTimeoutsRead, cfg.Timeouts.Read)
-		requireDuration(defaultServerTimeoutsReadHeader, cfg.Timeouts.ReadHeader)
-		requireDuration(defaultServerTimeoutsIdle, cfg.Timeouts.Idle)
-		requireDuration(defaultServerTimeoutsShutdown, cfg.Timeouts.Shutdown)
-		require.Equal(t, defaultServerLimitsMaxRequests, cfg.Limits.MaxRequests)
-		require.False(t, cfg.Log.RequestStart)
-	})
-
-	t.Run("read values", func(t *testing.T) {
-		cfgData := bytes.NewBuffer([]byte(`
+	tests := []struct {
+		name        string
+		cfgDataType config.DataType
+		cfgData     string
+		expectedCfg func() *Config
+	}{
+		{
+			name:        "yaml config",
+			cfgDataType: config.DataTypeYAML,
+			cfgData: `
 server:
-  tls:
-    enabled: true
-    key: "/test/path"
-    cert: "/test/path"
-  address: "127.0.0.1:777"
+  address: "127.0.0.1:8080"
   timeouts:
     write: 1h
     read: 7m
-    readheader: 1m
+    readHeader: 1m
     idle: 20m
     shutdown: 30s
   limits:
-    maxrequests: 10
-    maxbodysize: 1M
+    maxRequests: 10
+    maxBodySize: 1M
   log:
-    requeststart: true
-`))
-		cfg := Config{}
-		err := config.NewDefaultLoader("").LoadFromReader(cfgData, config.DataTypeYAML, &cfg)
+    requestStart: true
+  tls:
+    enabled: true
+    cert: "/test/path"
+    key: "/test/path"
+`,
+			expectedCfg: func() *Config {
+				cfg := NewDefaultConfig()
+				cfg.Address = "127.0.0.1:8080"
+				cfg.Timeouts.Write = config.TimeDuration(time.Hour)
+				cfg.Timeouts.Read = config.TimeDuration(time.Minute * 7)
+				cfg.Timeouts.ReadHeader = config.TimeDuration(time.Minute)
+				cfg.Timeouts.Idle = config.TimeDuration(time.Minute * 20)
+				cfg.Timeouts.Shutdown = config.TimeDuration(time.Second * 30)
+				cfg.Limits.MaxRequests = 10
+				cfg.Limits.MaxBodySizeBytes = 1024 * 1024
+				cfg.Log.RequestStart = true
+				cfg.TLS.Enabled = true
+				cfg.TLS.Certificate = "/test/path"
+				cfg.TLS.Key = "/test/path"
+				return cfg
+			},
+		},
+		{
+			name:        "json config",
+			cfgDataType: config.DataTypeJSON,
+			cfgData: `
+{
+	"server": {
+		"address": "127.0.0.1:8080",
+		"timeouts": {
+			"write": "1h",
+			"read": "7m",
+			"readHeader": "1m",
+			"idle": "20m",
+			"shutdown": "30s"
+		},
+		"limits": {
+			"maxRequests": 10,
+			"maxBodySize": "1M"
+		},
+		"log": {
+			"requestStart": true
+		},
+		"tls": {
+			"enabled": true,
+			"cert": "/test/path",
+			"key": "/test/path"
+		}
+	}
+}`,
+			expectedCfg: func() *Config {
+				cfg := NewDefaultConfig()
+				cfg.Address = "127.0.0.1:8080"
+				cfg.Timeouts.Write = config.TimeDuration(time.Hour)
+				cfg.Timeouts.Read = config.TimeDuration(time.Minute * 7)
+				cfg.Timeouts.ReadHeader = config.TimeDuration(time.Minute)
+				cfg.Timeouts.Idle = config.TimeDuration(time.Minute * 20)
+				cfg.Timeouts.Shutdown = config.TimeDuration(time.Second * 30)
+				cfg.Limits.MaxRequests = 10
+				cfg.Limits.MaxBodySizeBytes = 1024 * 1024
+				cfg.Log.RequestStart = true
+				cfg.TLS.Enabled = true
+				cfg.TLS.Certificate = "/test/path"
+				cfg.TLS.Key = "/test/path"
+				return cfg
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Load config using config.Loader.
+			appCfg := AppConfig{Server: NewDefaultConfig()}
+			expectedAppCfg := AppConfig{Server: tt.expectedCfg()}
+			cfgLoader := config.NewLoader(config.NewViperAdapter())
+			err := cfgLoader.LoadFromReader(bytes.NewBuffer([]byte(tt.cfgData)), tt.cfgDataType, appCfg.Server)
+			require.NoError(t, err)
+			require.Equal(t, expectedAppCfg, appCfg)
+
+			// Load config using viper unmarshal.
+			appCfg = AppConfig{Server: NewDefaultConfig()}
+			expectedAppCfg = AppConfig{Server: tt.expectedCfg()}
+			vpr := viper.New()
+			vpr.SetConfigType(string(tt.cfgDataType))
+			require.NoError(t, vpr.ReadConfig(bytes.NewBuffer([]byte(tt.cfgData))))
+			require.NoError(t, vpr.Unmarshal(&appCfg, func(c *mapstructure.DecoderConfig) {
+				c.DecodeHook = mapstructure.TextUnmarshallerHookFunc()
+			}))
+			require.Equal(t, expectedAppCfg, appCfg)
+
+			// Load config using yaml/json unmarshal.
+			appCfg = AppConfig{Server: NewDefaultConfig()}
+			expectedAppCfg = AppConfig{Server: tt.expectedCfg()}
+			switch tt.cfgDataType {
+			case config.DataTypeYAML:
+				require.NoError(t, yaml.Unmarshal([]byte(tt.cfgData), &appCfg))
+				require.Equal(t, expectedAppCfg, appCfg)
+			case config.DataTypeJSON:
+				require.NoError(t, json.Unmarshal([]byte(tt.cfgData), &appCfg))
+				require.Equal(t, expectedAppCfg, appCfg)
+			default:
+				t.Fatalf("unsupported config data type: %s", tt.cfgDataType)
+			}
+		})
+	}
+}
+
+func TestNewDefaultConfig(t *testing.T) {
+	var cfg *Config
+
+	// Empty config, all defaults for the data provider should be used
+	cfg = NewConfig()
+	require.NoError(t, config.NewDefaultLoader("").LoadFromReader(bytes.NewBuffer(nil), config.DataTypeYAML, cfg))
+	require.Equal(t, NewDefaultConfig(), cfg)
+
+	// viper.Unmarshal
+	cfg = NewDefaultConfig()
+	vpr := viper.New()
+	vpr.SetConfigType("yaml")
+	require.NoError(t, vpr.Unmarshal(&cfg))
+	require.Equal(t, NewDefaultConfig(), cfg)
+
+	// yaml.Unmarshal
+	cfg = NewDefaultConfig()
+	require.NoError(t, yaml.Unmarshal([]byte(""), &cfg))
+	require.Equal(t, NewDefaultConfig(), cfg)
+
+	// json.Unmarshal
+	cfg = NewDefaultConfig()
+	require.NoError(t, json.Unmarshal([]byte("{}"), &cfg))
+	require.Equal(t, NewDefaultConfig(), cfg)
+}
+
+func TestWithKeyPrefix(t *testing.T) {
+	t.Run("custom key prefix", func(t *testing.T) {
+		cfgData := `
+customServer:
+  address: "127.0.0.1:9999"
+`
+		expectedCfg := NewDefaultConfig(WithKeyPrefix("customServer"))
+		expectedCfg.Address = "127.0.0.1:9999"
+
+		cfg := NewConfig(WithKeyPrefix("customServer"))
+		err := config.NewLoader(config.NewViperAdapter()).LoadFromReader(bytes.NewBuffer([]byte(cfgData)), config.DataTypeYAML, cfg)
 		require.NoError(t, err)
-		require.Equal(t, "127.0.0.1:777", cfg.Address)
-		requireDuration("1h", cfg.Timeouts.Write)
-		requireDuration("7m", cfg.Timeouts.Read)
-		requireDuration("1m", cfg.Timeouts.ReadHeader)
-		requireDuration("20m", cfg.Timeouts.Idle)
-		requireDuration("30s", cfg.Timeouts.Shutdown)
-		require.Equal(t, 10, cfg.Limits.MaxRequests)
-		require.Equal(t, uint64(1024*1024), cfg.Limits.MaxBodySizeBytes)
-
-		require.True(t, cfg.TLS.Enabled)
-		require.Equal(t, "/test/path", cfg.TLS.Certificate)
-		require.Equal(t, "/test/path", cfg.TLS.Key)
-
-		require.True(t, cfg.Log.RequestStart)
+		require.Equal(t, expectedCfg, cfg)
 	})
 
-	t.Run("read values, unix socket", func(t *testing.T) {
-		cfgData := bytes.NewBuffer([]byte(`
+	t.Run("default key prefix, empty struct initialization", func(t *testing.T) {
+		cfgData := `
 server:
-  unixSocketPath: "/var/run/test.sock"
-`))
-		cfg := Config{}
-		err := config.NewDefaultLoader("").LoadFromReader(cfgData, config.DataTypeYAML, &cfg)
+  address: "127.0.0.1:9999"
+`
+		cfg := &Config{}
+		err := config.NewLoader(config.NewViperAdapter()).LoadFromReader(bytes.NewBuffer([]byte(cfgData)), config.DataTypeYAML, cfg)
 		require.NoError(t, err)
-		require.Equal(t, "/var/run/test.sock", cfg.UnixSocketPath)
+		require.Equal(t, "127.0.0.1:9999", cfg.Address)
 	})
+}
+
+func TestConfigValidationErrors(t *testing.T) {
+	tests := []struct {
+		name           string
+		yamlData       string
+		expectedErrMsg string
+	}{
+		{
+			name: "error, invalid address",
+			yamlData: `
+server:
+  address: ""
+`,
+			expectedErrMsg: `server.address: either address or unixSocketPath should be set`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig()
+			err := config.NewLoader(config.NewViperAdapter()).LoadFromReader(bytes.NewBuffer([]byte(tt.yamlData)), config.DataTypeYAML, cfg)
+			require.EqualError(t, err, tt.expectedErrMsg)
+		})
+	}
 }

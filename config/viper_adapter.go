@@ -170,6 +170,10 @@ func (va *ViperAdapter) GetStringFromSet(key string, set []string, ignoreCase bo
 
 // GetDuration tries to retrieve the value associated with the key as a duration.
 func (va *ViperAdapter) GetDuration(key string) (res time.Duration, err error) {
+	val := va.Get(key)
+	if val == nil {
+		return
+	}
 	res, err = cast.ToDurationE(va.Get(key))
 	err = WrapKeyErrIfNeeded(key, err)
 	return
@@ -185,6 +189,41 @@ func (va *ViperAdapter) GetStringMapString(key string) (res map[string]string, e
 	res, err = cast.ToStringMapStringE(val)
 	err = WrapKeyErrIfNeeded(key, err)
 	return
+}
+
+// GetBytesCount tries to retrieve the value associated with the key as a size in bytes.
+func (va *ViperAdapter) GetBytesCount(key string) (BytesCount, error) {
+	val := va.Get(key)
+	if val == nil {
+		return 0, nil
+	}
+	switch v := val.(type) {
+	case string:
+		num, err := bytefmt.ToBytes(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid bytes format: %s", v)
+		}
+		return BytesCount(num), nil
+
+	case int, int8, int16, int32, int64: // Handle all signed integers
+		num := cast.ToInt64(val)
+		if num < 0 {
+			return 0, fmt.Errorf("negative value is not allowed: %d", num)
+		}
+		return BytesCount(num), nil
+
+	case uint, uint8, uint16, uint32, uint64: // Handle all unsigned integers
+		return BytesCount(cast.ToUint64(val)), nil
+
+	case float32, float64: // Handle floating-point values (converting them to uint64)
+		return BytesCount(uint64(cast.ToFloat64(val))), nil
+
+	case BytesCount:
+		return v, nil
+
+	default:
+		return 0, fmt.Errorf("unsupported type for BytesCount: %T", val)
+	}
 }
 
 // Unmarshal unmarshals the config into a Struct.

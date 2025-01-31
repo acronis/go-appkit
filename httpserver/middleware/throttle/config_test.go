@@ -8,18 +8,21 @@ package throttle
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/restapi"
 )
 
-func TestConfig_Set(t *testing.T) {
-	cfgData := bytes.NewBuffer([]byte(`
+const yamlTestConfig = `
 rateLimitZones:
   rate_limit_total:
     rateLimit: 6000/m
@@ -115,21 +118,158 @@ rules:
     inFlightLimits:
       - zone: in_flight_limit_identity
       - zone: in_flight_limit_remote_addr
+    tags: ["tag1", "tag2"]
 
   - alias: "limit_batches"
     routes:
       - path: "= /api/2/tenants"
-        methods: POST,DELETE
+        methods: POST, DELETE
       - path: "= /api/2/users"
-        methods: POST,DELETE,PUT
+        methods: ["POST", "DELETE", "PUT"]
     rateLimits:
       - zone: rate_limit_total
     inFlightLimits:
       - zone: in_flight_limit_total
-`))
-	cfg := Config{}
-	err := config.NewDefaultLoader("").LoadFromReader(cfgData, config.DataTypeYAML, &cfg)
-	require.NoError(t, err)
+    tags: tag_a, tag_b
+`
+
+const jsonTestConfig = `
+{
+  "rateLimitZones": {
+    "rate_limit_total": {
+      "rateLimit": "6000/m",
+      "burstLimit": 1000,
+      "backlogLimit": 100,
+      "backlogTimeout": "30s",
+      "responseStatusCode": 503,
+      "responseRetryAfter": "auto",
+      "excludedKeys": [],
+      "includedKeys": [],
+      "dryRun": false
+    },
+    "rate_limit_identity": {
+      "key": {
+        "type": "identity"
+      },
+      "maxKeys": 10000,
+      "alg": "leaky_bucket",
+      "rateLimit": "50/s",
+      "burstLimit": 100,
+      "responseStatusCode": 429,
+      "responseRetryAfter": "15s",
+      "excludedKeys": [
+        "2801c8de-7b41-4950-94e8-ad8fe8bd6d60",
+        "7ab74f7c-846e-435f-96d4-5a0ce7068ddf"
+      ],
+      "includedKeys": [],
+      "dryRun": true
+    },
+    "rate_limit_identity_window": {
+      "key": {
+        "type": "identity"
+      },
+      "maxKeys": 10000,
+      "alg": "sliding_window",
+      "rateLimit": "500/m",
+      "responseStatusCode": 429,
+      "responseRetryAfter": "10s",
+      "excludedKeys": [],
+      "includedKeys": [],
+      "dryRun": true
+    }
+  },
+  "inFlightLimitZones": {
+    "in_flight_limit_total": {
+      "inFlightLimit": 5000,
+      "backlogLimit": 10000,
+      "backlogTimeout": "15s",
+      "responseStatusCode": 503,
+      "excludedKeys": [],
+      "includedKeys": [],
+      "dryRun": false
+    },
+    "in_flight_limit_identity": {
+      "key": {
+        "type": "identity"
+      },
+      "maxKeys": 10000,
+      "inFlightLimit": 32,
+      "backlogLimit": 64,
+      "backlogTimeout": "5s",
+      "responseStatusCode": 429,
+      "responseRetryAfter": "30s",
+      "excludedKeys": [],
+      "includedKeys": [
+        "7ab74f7c-846e-435f-96d4-5a0ce7068ddf",
+        "2801c8de-7b41-4950-94e8-ad8fe8bd6d60"
+      ],
+      "dryRun": true
+    },
+    "in_flight_limit_tenant": {
+      "key": {
+        "type": "header",
+        "headerName": "X-Tenant-ID"
+      },
+      "maxKeys": 5000,
+      "inFlightLimit": 16,
+      "backlogLimit": 24,
+      "backlogTimeout": "5s",
+      "responseStatusCode": 429,
+      "excludedKeys": [],
+      "includedKeys": [],
+      "dryRun": true
+    },
+    "in_flight_limit_remote_addr": {
+      "key": {
+        "type": "remote_addr"
+      },
+      "maxKeys": 5000,
+      "inFlightLimit": 1000,
+      "backlogLimit": 2000,
+      "backlogTimeout": "5s",
+      "responseStatusCode": 503
+    }
+  },
+  "rules": [
+    {
+      "routes": [
+        { "path": "/api/2/users" },
+        { "path": "/api/2/tenants" }
+      ],
+      "excludedRoutes": [
+        { "path": "/api/2/users/42" },
+        { "path": "/api/2/tenants/42" }
+      ],
+      "rateLimits": [
+        { "zone": "rate_limit_identity" },
+        { "zone": "rate_limit_identity_window" }
+      ],
+      "inFlightLimits": [
+        { "zone": "in_flight_limit_identity" },
+        { "zone": "in_flight_limit_remote_addr" }
+      ],
+      "tags": ["tag1", "tag2"]
+    },
+    {
+      "alias": "limit_batches",
+      "routes": [
+        { "path": "= /api/2/tenants", "methods": "POST, DELETE" },
+        { "path": "= /api/2/users", "methods": ["POST", "DELETE", "PUT"] }
+      ],
+      "rateLimits": [
+        { "zone": "rate_limit_total" }
+      ],
+      "inFlightLimits": [
+        { "zone": "in_flight_limit_total" }
+      ],
+      "tags": "tag_a, tag_b"
+    }
+  ]
+}
+`
+
+func requireTestConfig(t *testing.T, cfg *Config) {
+	t.Helper()
 
 	// Check rateLimitZones
 	require.Len(t, cfg.RateLimitZones, 3)
@@ -172,7 +312,7 @@ rules:
 		RateLimit:          RateLimitValue{Count: 6000, Duration: time.Minute},
 		BurstLimit:         1000,
 		BacklogLimit:       100,
-		BacklogTimeout:     time.Second * 30,
+		BacklogTimeout:     config.TimeDuration(time.Second * 30),
 		ResponseRetryAfter: RateLimitRetryAfterValue{IsAuto: true},
 	}, cfg.RateLimitZones["rate_limit_total"])
 
@@ -189,8 +329,8 @@ rules:
 		},
 		InFlightLimit:      32,
 		BacklogLimit:       64,
-		BacklogTimeout:     time.Second * 5,
-		ResponseRetryAfter: time.Second * 30,
+		BacklogTimeout:     config.TimeDuration(time.Second * 5),
+		ResponseRetryAfter: config.TimeDuration(time.Second * 30),
 	}, cfg.InFlightLimitZones["in_flight_limit_identity"])
 	require.Equal(t, InFlightLimitZoneConfig{
 		ZoneConfig: ZoneConfig{
@@ -202,8 +342,8 @@ rules:
 		},
 		InFlightLimit:      5000,
 		BacklogLimit:       10000,
-		BacklogTimeout:     time.Second * 15,
-		ResponseRetryAfter: time.Duration(0),
+		BacklogTimeout:     config.TimeDuration(time.Second * 15),
+		ResponseRetryAfter: config.TimeDuration(0),
 	}, cfg.InFlightLimitZones["in_flight_limit_total"])
 	require.Equal(t, InFlightLimitZoneConfig{
 		ZoneConfig: ZoneConfig{
@@ -216,8 +356,8 @@ rules:
 		},
 		InFlightLimit:      16,
 		BacklogLimit:       24,
-		BacklogTimeout:     time.Second * 5,
-		ResponseRetryAfter: time.Duration(0),
+		BacklogTimeout:     config.TimeDuration(time.Second * 5),
+		ResponseRetryAfter: config.TimeDuration(0),
 	}, cfg.InFlightLimitZones["in_flight_limit_tenant"])
 	require.Equal(t, InFlightLimitZoneConfig{
 		ZoneConfig: ZoneConfig{
@@ -227,8 +367,8 @@ rules:
 		},
 		InFlightLimit:      1000,
 		BacklogLimit:       2000,
-		BacklogTimeout:     time.Second * 5,
-		ResponseRetryAfter: time.Duration(0),
+		BacklogTimeout:     config.TimeDuration(time.Second * 5),
+		ResponseRetryAfter: config.TimeDuration(time.Duration(0)),
 	}, cfg.InFlightLimitZones["in_flight_limit_remote_addr"])
 
 	// Check rules.
@@ -245,6 +385,7 @@ rules:
 			},
 			RateLimits:     []RuleRateLimit{{Zone: "rate_limit_identity"}, {Zone: "rate_limit_identity_window"}},
 			InFlightLimits: []RuleInFlightLimit{{Zone: "in_flight_limit_identity"}, {Zone: "in_flight_limit_remote_addr"}},
+			Tags:           []string{"tag1", "tag2"},
 		},
 		{
 			Alias: "limit_batches",
@@ -254,8 +395,66 @@ rules:
 			},
 			RateLimits:     []RuleRateLimit{{Zone: "rate_limit_total"}},
 			InFlightLimits: []RuleInFlightLimit{{Zone: "in_flight_limit_total"}},
+			Tags:           []string{"tag_a", "tag_b"},
 		},
 	}, cfg.Rules)
+}
+
+func TestConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfgDataType config.DataType
+		cfgData     string
+		checkFunc   func(t *testing.T, cfg *Config)
+	}{
+		{
+			name:        "yaml config",
+			cfgDataType: config.DataTypeYAML,
+			cfgData:     yamlTestConfig,
+			checkFunc:   requireTestConfig,
+		},
+		{
+			name:        "json config",
+			cfgDataType: config.DataTypeJSON,
+			cfgData:     jsonTestConfig,
+			checkFunc:   requireTestConfig,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg *Config
+
+			// Load config using config.Loader.
+			cfg = NewConfig()
+			cfgLoader := config.NewLoader(config.NewViperAdapter())
+			err := cfgLoader.LoadFromReader(bytes.NewBuffer([]byte(tt.cfgData)), tt.cfgDataType, cfg)
+			require.NoError(t, err)
+			requireTestConfig(t, cfg)
+
+			// Load config using viper unmarshal.
+			cfg = NewConfig()
+			vpr := viper.New()
+			vpr.SetConfigType(string(tt.cfgDataType))
+			require.NoError(t, vpr.ReadConfig(bytes.NewBuffer([]byte(tt.cfgData))))
+			require.NoError(t, vpr.Unmarshal(&cfg, func(decoderConfig *mapstructure.DecoderConfig) {
+				decoderConfig.DecodeHook = MapstructureDecodeHook()
+			}))
+			requireTestConfig(t, cfg)
+
+			// Load config using yaml/json unmarshal.
+			cfg = NewConfig()
+			switch tt.cfgDataType {
+			case config.DataTypeYAML:
+				require.NoError(t, yaml.Unmarshal([]byte(tt.cfgData), &cfg))
+				requireTestConfig(t, cfg)
+			case config.DataTypeJSON:
+				require.NoError(t, json.Unmarshal([]byte(tt.cfgData), &cfg))
+				requireTestConfig(t, cfg)
+			default:
+				t.Fatalf("unsupported config data type: %s", tt.cfgDataType)
+			}
+		})
+	}
 }
 
 func TestConfig_Set_WithErrors(t *testing.T) {

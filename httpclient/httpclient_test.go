@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/httpserver/middleware"
 	"github.com/acronis/go-appkit/log/logtest"
 	"github.com/acronis/go-appkit/testutil"
@@ -134,7 +135,7 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 	cfg.Retries.MaxAttempts = 1
 	cfg.Retries.Policy = RetryPolicyExponential
 	cfg.Retries.ExponentialBackoff = ExponentialBackoffConfig{
-		InitialInterval: 2 * time.Millisecond,
+		InitialInterval: config.TimeDuration(2 * time.Millisecond),
 		Multiplier:      1.1,
 	}
 

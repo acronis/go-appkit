@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseRoutePath(t *testing.T) {
@@ -340,4 +341,74 @@ func mustParseRoutePath(s string) RoutePath {
 		panic(err)
 	}
 	return rp
+}
+
+func TestMethodsList_UnmarshalText(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected MethodsList
+	}{
+		{input: "GET,POST", expected: MethodsList{"GET", "POST"}},
+		{input: "PUT, DELETE", expected: MethodsList{"PUT", "DELETE"}},
+		{input: "", expected: MethodsList{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var ml MethodsList
+			err := ml.UnmarshalText([]byte(tt.input))
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, ml)
+		})
+	}
+}
+
+func TestMethodsList_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected MethodsList
+		wantErr  bool
+	}{
+		{input: `"GET,POST"`, expected: MethodsList{"GET", "POST"}, wantErr: false},
+		{input: `["PUT", "DELETE"]`, expected: MethodsList{"PUT", "DELETE"}, wantErr: false},
+		{input: `""`, expected: MethodsList{}, wantErr: false},
+		{input: `123`, expected: nil, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var ml MethodsList
+			err := ml.UnmarshalJSON([]byte(tt.input))
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, ml)
+			}
+		})
+	}
+}
+
+func TestMethodsList_UnmarshalYAML(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected MethodsList
+		wantErr  bool
+	}{
+		{input: `"GET,POST"`, expected: MethodsList{"GET", "POST"}, wantErr: false},
+		{input: `["PUT", "DELETE"]`, expected: MethodsList{"PUT", "DELETE"}, wantErr: false},
+		{input: `""`, expected: MethodsList{}, wantErr: false},
+		{input: `[123`, expected: nil, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var ml MethodsList
+			err := yaml.Unmarshal([]byte(tt.input), &ml)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, ml)
+			}
+		})
+	}
 }

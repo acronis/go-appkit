@@ -7,6 +7,7 @@ Released under MIT license.
 package throttle
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mitchellh/mapstructure"
+	"gopkg.in/yaml.v3"
 
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/restapi"
@@ -27,19 +29,21 @@ const (
 )
 
 // Config represents a configuration for throttling of HTTP requests on the server side.
+// Configuration can be loaded in different formats (YAML, JSON) using config.Loader, viper,
+// or with json.Unmarshal/yaml.Unmarshal functions directly.
 type Config struct {
 	// RateLimitZones contains rate limiting zones.
 	// Key is a zone's name, and value is a zone's configuration.
-	RateLimitZones map[string]RateLimitZoneConfig `mapstructure:"rateLimitZones" yaml:"rateLimitZones"`
+	RateLimitZones map[string]RateLimitZoneConfig `mapstructure:"rateLimitZones" yaml:"rateLimitZones" json:"rateLimitZones"`
 
 	// InFlightLimitZones contains in-flight limiting zones.
 	// Key is a zone's name, and value is a zone's configuration.
-	InFlightLimitZones map[string]InFlightLimitZoneConfig `mapstructure:"inFlightLimitZones" yaml:"inFlightLimitZones"`
+	InFlightLimitZones map[string]InFlightLimitZoneConfig `mapstructure:"inFlightLimitZones" yaml:"inFlightLimitZones" json:"inFlightLimitZones"` // nolint: lll
 
 	// Rules contains list of so-called throttling rules.
 	// Basically, throttling rule represents a route (or multiple routes),
 	// and rate/in-flight limiting zones based on which all matched HTTP requests will be throttled.
-	Rules []RuleConfig `mapstructure:"rules" yaml:"rules"`
+	Rules []RuleConfig `mapstructure:"rules" yaml:"rules" json:"rules"`
 
 	keyPrefix string
 }
@@ -47,35 +51,53 @@ type Config struct {
 var _ config.Config = (*Config)(nil)
 var _ config.KeyPrefixProvider = (*Config)(nil)
 
-// NewConfig creates a new instance of the Config.
-func NewConfig() *Config {
-	return NewConfigWithKeyPrefix("")
+// ConfigOption is a type for functional options for the Config.
+type ConfigOption func(*configOptions)
+
+type configOptions struct {
+	keyPrefix string
 }
 
-// NewConfigWithKeyPrefix creates a new instance of the Config.
-// Allows specifying key prefix which will be used for parsing configuration parameters.
+// WithKeyPrefix returns a ConfigOption that sets a key prefix for parsing configuration parameters.
+// This prefix will be used by config.Loader.
+func WithKeyPrefix(keyPrefix string) ConfigOption {
+	return func(o *configOptions) {
+		o.keyPrefix = keyPrefix
+	}
+}
+
+// NewConfig creates a new instance of the Config.
+func NewConfig(options ...ConfigOption) *Config {
+	var opts configOptions
+	for _, opt := range options {
+		opt(&opts)
+	}
+	return &Config{keyPrefix: opts.keyPrefix}
+}
+
+// NewConfigWithKeyPrefix creates a new instance of the Config with a key prefix.
+// This prefix will be used by config.Loader.
+// Deprecated: use NewConfig with WithKeyPrefix instead.
 func NewConfigWithKeyPrefix(keyPrefix string) *Config {
 	return &Config{keyPrefix: keyPrefix}
 }
 
 // KeyPrefix returns a key prefix with which all configuration parameters should be presented.
+// Implements config.KeyPrefixProvider interface.
 func (c *Config) KeyPrefix() string {
 	return c.keyPrefix
 }
 
 // SetProviderDefaults sets default configuration values for logger in config.DataProvider.
+// Implements config.Config interface.
 func (c *Config) SetProviderDefaults(_ config.DataProvider) {
 }
 
 // Set sets throttling configuration values from config.DataProvider.
+// Implements config.Config interface.
 func (c *Config) Set(dp config.DataProvider) error {
 	if err := dp.Unmarshal(c, func(decoderConfig *mapstructure.DecoderConfig) {
-		decoderConfig.DecodeHook = mapstructure.ComposeDecodeHookFunc(
-			mapstructure.StringToTimeDurationHookFunc(),
-			mapstructure.StringToSliceHookFunc(","),
-			mapstructure.TextUnmarshallerHookFunc(),
-			mapstructureTrimSpaceStringsHookFunc(),
-		)
+		decoderConfig.DecodeHook = MapstructureDecodeHook()
 	}); err != nil {
 		return err
 	}
@@ -104,12 +126,12 @@ func (c *Config) Validate() error {
 
 // ZoneConfig represents a basic zone configuration.
 type ZoneConfig struct {
-	Key                ZoneKeyConfig `mapstructure:"key" yaml:"key"`
-	MaxKeys            int           `mapstructure:"maxKeys" yaml:"maxKeys"`
-	ResponseStatusCode int           `mapstructure:"responseStatusCode" yaml:"responseStatusCode"`
-	DryRun             bool          `mapstructure:"dryRun" yaml:"dryRun"`
-	IncludedKeys       []string      `mapstructure:"includedKeys" yaml:"includedKeys"`
-	ExcludedKeys       []string      `mapstructure:"excludedKeys" yaml:"excludedKeys"`
+	Key                ZoneKeyConfig `mapstructure:"key" yaml:"key" json:"key"`
+	MaxKeys            int           `mapstructure:"maxKeys" yaml:"maxKeys" json:"maxKeys"`
+	ResponseStatusCode int           `mapstructure:"responseStatusCode" yaml:"responseStatusCode" json:"responseStatusCode"`
+	DryRun             bool          `mapstructure:"dryRun" yaml:"dryRun" json:"dryRun"`
+	IncludedKeys       []string      `mapstructure:"includedKeys" yaml:"includedKeys" json:"includedKeys"`
+	ExcludedKeys       []string      `mapstructure:"excludedKeys" yaml:"excludedKeys" json:"excludedKeys"`
 }
 
 // Validate validates zone configuration.
@@ -142,12 +164,12 @@ func (c *ZoneConfig) getResponseStatusCode() int {
 // RateLimitZoneConfig represents zone configuration for rate limiting.
 type RateLimitZoneConfig struct {
 	ZoneConfig         `mapstructure:",squash" yaml:",inline"`
-	Alg                string                   `mapstructure:"alg" yaml:"alg"`
-	RateLimit          RateLimitValue           `mapstructure:"rateLimit" yaml:"rateLimit"`
-	BurstLimit         int                      `mapstructure:"burstLimit" yaml:"burstLimit"`
-	BacklogLimit       int                      `mapstructure:"backlogLimit" yaml:"backlogLimit"`
-	BacklogTimeout     time.Duration            `mapstructure:"backlogTimeout" yaml:"backlogTimeout"`
-	ResponseRetryAfter RateLimitRetryAfterValue `mapstructure:"responseRetryAfter" yaml:"responseRetryAfter"`
+	Alg                string                   `mapstructure:"alg" yaml:"alg" json:"alg"`
+	RateLimit          RateLimitValue           `mapstructure:"rateLimit" yaml:"rateLimit" json:"rateLimit"`
+	BurstLimit         int                      `mapstructure:"burstLimit" yaml:"burstLimit" json:"burstLimit"`
+	BacklogLimit       int                      `mapstructure:"backlogLimit" yaml:"backlogLimit" json:"backlogLimit"`
+	BacklogTimeout     config.TimeDuration      `mapstructure:"backlogTimeout" yaml:"backlogTimeout" json:"backlogTimeout"`
+	ResponseRetryAfter RateLimitRetryAfterValue `mapstructure:"responseRetryAfter" yaml:"responseRetryAfter" json:"responseRetryAfter"`
 }
 
 // Validate validates zone configuration for rate limiting.
@@ -173,10 +195,10 @@ func (c *RateLimitZoneConfig) Validate() error {
 // InFlightLimitZoneConfig represents zone configuration for in-flight limiting.
 type InFlightLimitZoneConfig struct {
 	ZoneConfig         `mapstructure:",squash" yaml:",inline"`
-	InFlightLimit      int           `mapstructure:"inFlightLimit" yaml:"inFlightLimit"`
-	BacklogLimit       int           `mapstructure:"backlogLimit" yaml:"backlogLimit"`
-	BacklogTimeout     time.Duration `mapstructure:"backlogTimeout" yaml:"backlogTimeout"`
-	ResponseRetryAfter time.Duration `mapstructure:"responseRetryAfter" yaml:"responseRetryAfter"`
+	InFlightLimit      int                 `mapstructure:"inFlightLimit" yaml:"inFlightLimit" json:"inFlightLimit"`
+	BacklogLimit       int                 `mapstructure:"backlogLimit" yaml:"backlogLimit" json:"backlogLimit"`
+	BacklogTimeout     config.TimeDuration `mapstructure:"backlogTimeout" yaml:"backlogTimeout" json:"backlogTimeout"`
+	ResponseRetryAfter config.TimeDuration `mapstructure:"responseRetryAfter" yaml:"responseRetryAfter" json:"responseRetryAfter"`
 }
 
 // Validate validates zone configuration for in-flight limiting.
@@ -207,14 +229,14 @@ const (
 // ZoneKeyConfig represents a configuration of zone's key.
 type ZoneKeyConfig struct {
 	// Type determines type of key that will be used for throttling.
-	Type ZoneKeyType `mapstructure:"type" yaml:"type"`
+	Type ZoneKeyType `mapstructure:"type" yaml:"type" json:"type"`
 
 	// HeaderName is a name of the HTTP request header which value will be used as a key.
 	// Matters only when Type is a "header".
-	HeaderName string `mapstructure:"headerName" yaml:"headerName"`
+	HeaderName string `mapstructure:"headerName" yaml:"headerName" json:"headerName"`
 
 	// NoBypassEmpty specifies whether throttling will be used if the value obtained by the key is empty.
-	NoBypassEmpty bool `mapstructure:"noBypassEmpty" yaml:"noBypassEmpty"`
+	NoBypassEmpty bool `mapstructure:"noBypassEmpty" yaml:"noBypassEmpty" json:"noBypassEmpty"`
 }
 
 // Validate validates keys zone configuration.
@@ -234,16 +256,16 @@ func (c *ZoneKeyConfig) Validate() error {
 // RuleConfig represents configuration for throttling rule.
 type RuleConfig struct {
 	// Alias is an alternative name for the rule. It will be used as a label in metrics.
-	Alias string `mapstructure:"alias" yaml:"alias"`
+	Alias string `mapstructure:"alias" yaml:"alias" json:"alias"`
 
 	// Routes contains a list of routes (HTTP verb + URL path) for which the rule will be applied.
-	Routes []restapi.RouteConfig `mapstructure:"routes" yaml:"routes"`
+	Routes []restapi.RouteConfig `mapstructure:"routes" yaml:"routes" json:"routes"`
 
 	// ExcludedRoutes contains list of routes (HTTP verb + URL path) to be excluded from throttling limitations.
 	// The following service endpoints fit should typically be added to this list:
 	// - healthcheck endpoint serving as readiness probe
 	// - status endpoint serving as liveness probe
-	ExcludedRoutes []restapi.RouteConfig `mapstructure:"excludedRoutes" yaml:"excludedRoutes"`
+	ExcludedRoutes []restapi.RouteConfig `mapstructure:"excludedRoutes" yaml:"excludedRoutes" json:"excludedRoutes"`
 
 	// Tags is useful when the different rules of the same config should be used by different middlewares.
 	// As example let's suppose we would like to have 2 different throttling rules:
@@ -252,13 +274,13 @@ type RuleConfig struct {
 	// In the code, we will have 2 middlewares that will be executed on the different steps of the HTTP request serving,
 	// and each one should do only its own throttling.
 	// We can achieve this using different tags for rules and passing needed tag in the MiddlewareOpts.
-	Tags []string `mapstructure:"tags" yaml:"tags"`
+	Tags TagsList `mapstructure:"tags" yaml:"tags" json:"tags"`
 
 	// RateLimits contains a list of the rate limiting zones that are used in the rule.
-	RateLimits []RuleRateLimit `mapstructure:"rateLimits" yaml:"rateLimits"`
+	RateLimits []RuleRateLimit `mapstructure:"rateLimits" yaml:"rateLimits" json:"rateLimits"`
 
 	// InFlightLimits contains a list of the in-flight limiting zones that are used in the rule.
-	InFlightLimits []RuleInFlightLimit `mapstructure:"inFlightLimits" yaml:"inFlightLimits"`
+	InFlightLimits []RuleInFlightLimit `mapstructure:"inFlightLimits" yaml:"inFlightLimits" json:"inFlightLimits"`
 }
 
 // Name returns throttling rule name.
@@ -324,12 +346,48 @@ type RateLimitRetryAfterValue struct {
 	Duration time.Duration
 }
 
+const rateLimitRetryAfterAuto = "auto"
+
+// String returns a string representation of the retry-after value.
+// Implements fmt.Stringer interface.
+func (ra RateLimitRetryAfterValue) String() string {
+	if ra.IsAuto {
+		return rateLimitRetryAfterAuto
+	}
+	return ra.Duration.String()
+}
+
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
+// Implements the encoding.TextUnmarshaler interface which is used by mapstructure.TextUnmarshallerHookFunc.
 func (ra *RateLimitRetryAfterValue) UnmarshalText(text []byte) error {
-	switch v := string(text); v {
+	return ra.unmarshal(string(text))
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+// Implements the json.Unmarshaler interface.
+func (ra *RateLimitRetryAfterValue) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	return ra.unmarshal(text)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+// Implements the yaml.Unmarshaler interface.
+func (ra *RateLimitRetryAfterValue) UnmarshalYAML(value *yaml.Node) error {
+	var text string
+	if err := value.Decode(&text); err != nil {
+		return err
+	}
+	return ra.unmarshal(text)
+}
+
+func (ra *RateLimitRetryAfterValue) unmarshal(retryAfterVal string) error {
+	switch v := retryAfterVal; v {
 	case "":
 		*ra = RateLimitRetryAfterValue{Duration: 0}
-	case "auto":
+	case rateLimitRetryAfterAuto:
 		*ra = RateLimitRetryAfterValue{IsAuto: true}
 	default:
 		dur, err := time.ParseDuration(v)
@@ -347,9 +405,39 @@ type RateLimitValue struct {
 	Duration time.Duration
 }
 
+// String returns a string representation of the rate limit value.
+// Implements fmt.Stringer interface.
+func (rl RateLimitValue) String() string {
+	return fmt.Sprintf("%d/%s", rl.Count, rl.Duration)
+}
+
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
+// Implements the encoding.TextUnmarshaler interface which is used by mapstructure.TextUnmarshallerHookFunc.
 func (rl *RateLimitValue) UnmarshalText(text []byte) error {
-	rate := string(text)
+	return rl.unmarshal(string(text))
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+// Implements the json.Unmarshaler interface.
+func (rl *RateLimitValue) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return err
+	}
+	return rl.unmarshal(text)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+// Implements the yaml.Unmarshaler interface.
+func (rl *RateLimitValue) UnmarshalYAML(value *yaml.Node) error {
+	var text string
+	if err := value.Decode(&text); err != nil {
+		return err
+	}
+	return rl.unmarshal(text)
+}
+
+func (rl *RateLimitValue) unmarshal(rate string) error {
 	incorrectFormatErr := fmt.Errorf(
 		"incorrect format for rate %q, should be N/(s|m|h), for example 10/s, 100/m, 1000/h", rate)
 	parts := strings.SplitN(rate, "/", 2)
@@ -375,6 +463,57 @@ func (rl *RateLimitValue) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// TagsList represents a list of tags.
+type TagsList []string
+
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+func (tl *TagsList) UnmarshalText(text []byte) error {
+	tl.unmarshal(string(text))
+	return nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (tl *TagsList) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		tl.unmarshal(s)
+		return nil
+	}
+	var l []string
+	if err := json.Unmarshal(data, &l); err == nil {
+		*tl = l
+		return nil
+	}
+	return fmt.Errorf("invalid methods list: %s", data)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (tl *TagsList) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err == nil {
+		tl.unmarshal(s)
+		return nil
+	}
+	var l []string
+	if err := value.Decode(&l); err == nil {
+		*tl = l
+		return nil
+	}
+	return fmt.Errorf("invalid methods list: %v", value)
+}
+
+func (tl *TagsList) unmarshal(data string) {
+	data = strings.TrimSpace(data)
+	if data == "" {
+		*tl = TagsList{}
+		return
+	}
+	methods := strings.Split(data, ",")
+	for _, m := range methods {
+		*tl = append(*tl, strings.TrimSpace(m))
+	}
+}
+
 func mapstructureTrimSpaceStringsHookFunc() mapstructure.DecodeHookFunc {
 	return func(
 		f reflect.Kind,
@@ -394,4 +533,13 @@ func mapstructureTrimSpaceStringsHookFunc() mapstructure.DecodeHookFunc {
 			return data, nil
 		}
 	}
+}
+
+// MapstructureDecodeHook returns a DecodeHookFunc for mapstructure to handle custom types.
+func MapstructureDecodeHook() mapstructure.DecodeHookFunc {
+	return mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.TextUnmarshallerHookFunc(),
+		mapstructureTrimSpaceStringsHookFunc(),
+	)
 }

@@ -124,6 +124,11 @@ func (kp *KeyPrefixedDataProvider) GetStringMapString(key string) (res map[strin
 	return kp.delegate.GetStringMapString(kp.makeKey(key))
 }
 
+// GetBytesCount tries to retrieve the value associated with the key as a size in bytes.
+func (kp *KeyPrefixedDataProvider) GetBytesCount(key string) (BytesCount, error) {
+	return kp.delegate.GetBytesCount(kp.makeKey(key))
+}
+
 // Unmarshal unmarshals the config into a Struct.
 func (kp *KeyPrefixedDataProvider) Unmarshal(rawVal interface{}, opts ...DecoderConfigOption) (err error) {
 	return kp.delegate.UnmarshalKey(kp.makeKey(""), rawVal, opts...)

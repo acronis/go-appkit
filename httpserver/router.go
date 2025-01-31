@@ -92,7 +92,7 @@ func applyDefaultMiddlewaresToRouter(
 		ExcludedEndpoints:      cfg.Log.ExcludedEndpoints,
 		SecretQueryParams:      cfg.Log.SecretQueryParams,
 		AddRequestInfoToLogger: cfg.Log.AddRequestInfoToLogger,
-		SlowRequestThreshold:   cfg.Log.SlowRequestThreshold,
+		SlowRequestThreshold:   time.Duration(cfg.Log.SlowRequestThreshold),
 	}
 	for _, headerName := range cfg.Log.RequestHeaders {
 		logFieldKey := "req_header_" + strings.ToLower(strings.ReplaceAll(headerName, "-", "_"))
@@ -136,7 +136,7 @@ func applyDefaultMiddlewaresToRouter(
 
 	// Middleware to limit max request body.
 	if cfg.Limits.MaxBodySizeBytes > 0 {
-		router.Use(middleware.RequestBodyLimit(cfg.Limits.MaxBodySizeBytes, opts.ErrorDomain))
+		router.Use(middleware.RequestBodyLimit(uint64(cfg.Limits.MaxBodySizeBytes), opts.ErrorDomain))
 	}
 
 	return nil
