@@ -27,6 +27,7 @@ func TestByteSize_UnmarshalJSON(t *testing.T) {
 		{"Valid Human-Readable, MiB", `"10MiB"`, ByteSize(10 * 1024 * 1024), false},
 		{"Valid Human-Readable, k8s format, Mi", `"10Mi"`, ByteSize(10 * 1024 * 1024), false},
 		{"Invalid Format", `"invalid"`, 0, true},
+		{"Invalid Format, not a string", "{}", 0, true},
 		{"Negative Value", `"-1024"`, 0, true},
 	}
 	for _, tt := range tests {
@@ -55,6 +56,7 @@ func TestByteSize_UnmarshalYAML(t *testing.T) {
 		{"Valid Human-Readable, MiB", "size: 20MiB", ByteSize(20 * 1024 * 1024), false},
 		{"Valid Human-Readable, k8s format, Mi", "size: 20Mi", ByteSize(20 * 1024 * 1024), false},
 		{"Invalid Format", "size: invalid", 0, true},
+		{"Invalid Format, not a string", "size: {}", 0, true},
 		{"Negative Value", "size: -1024", 0, true},
 	}
 	for _, tt := range tests {
@@ -184,6 +186,7 @@ func TestTimeDuration_UnmarshalJSON(t *testing.T) {
 		{"Valid Integer", `1000000000`, TimeDuration(time.Second), false},
 		{"Valid Human-Readable", `"1s"`, TimeDuration(time.Second), false},
 		{"Invalid Format", `"invalid"`, 0, true},
+		{"Invalid Format, not a string", "{}", 0, true},
 		{"Negative Value", `"-1000"`, 0, true},
 	}
 	for _, tt := range tests {
@@ -210,6 +213,7 @@ func TestTimeDuration_UnmarshalYAML(t *testing.T) {
 		{"Valid Integer", "duration: 2000000000", TimeDuration(2 * time.Second), false},
 		{"Valid Human-Readable", "duration: 2s", TimeDuration(2 * time.Second), false},
 		{"Invalid Format", "duration: invalid", 0, true},
+		{"Invalid Format, not a string", "duration: {}", 0, true},
 		{"Negative Value", "duration: -2000", 0, true},
 	}
 	for _, tt := range tests {

@@ -58,7 +58,7 @@ func (b *ByteSize) UnmarshalYAML(value *yaml.Node) error {
 		*b = bs
 		return nil
 	}
-	return fmt.Errorf("invalid bytes format: %v", value)
+	return fmt.Errorf("invalid byte size format: %v", value)
 }
 
 // UnmarshalText allows decoding from text.
@@ -126,26 +126,17 @@ func (d *TimeDuration) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	if dur, err := time.ParseDuration(s); err == nil {
-		*d = TimeDuration(dur)
-		return nil
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid time duration format (%s): %w", s, err)
 	}
-
-	return fmt.Errorf("invalid duration format: %s", s)
+	*d = TimeDuration(dur)
+	return nil
 }
 
 // UnmarshalYAML allows decoding from YAML and supports both integers (nanoseconds) and human-readable strings.
 // Implements yaml.Unmarshaler interface.
 func (d *TimeDuration) UnmarshalYAML(value *yaml.Node) error {
-	var raw string
-	if err := value.Decode(&raw); err == nil {
-		var dur time.Duration
-		if dur, err = time.ParseDuration(raw); err == nil {
-			*d = TimeDuration(dur)
-			return nil
-		}
-	}
-
 	var num int64
 	if err := value.Decode(&num); err == nil {
 		if num < 0 {
@@ -154,8 +145,16 @@ func (d *TimeDuration) UnmarshalYAML(value *yaml.Node) error {
 		*d = TimeDuration(num)
 		return nil
 	}
-
-	return fmt.Errorf("invalid duration format: %v", value)
+	var raw string
+	if err := value.Decode(&raw); err == nil {
+		dur, parseErr := time.ParseDuration(raw)
+		if parseErr != nil {
+			return fmt.Errorf("invalid time duration format (%s): %w", raw, parseErr)
+		}
+		*d = TimeDuration(dur)
+		return nil
+	}
+	return fmt.Errorf("invalid time duration format: %v", value)
 }
 
 // UnmarshalText allows decoding from text.
