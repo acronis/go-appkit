@@ -105,7 +105,7 @@ func (kp *KeyPrefixedDataProvider) GetStringSlice(key string) (res []string, err
 }
 
 // GetSizeInBytes tries to retrieve the value associated with the key as a size in bytes.
-func (kp *KeyPrefixedDataProvider) GetSizeInBytes(key string) (uint64, error) {
+func (kp *KeyPrefixedDataProvider) GetSizeInBytes(key string) (ByteSize, error) {
 	return kp.delegate.GetSizeInBytes(kp.makeKey(key))
 }
 
@@ -122,11 +122,6 @@ func (kp *KeyPrefixedDataProvider) GetDuration(key string) (res time.Duration, e
 // GetStringMapString tries to retrieve the value associated with the key as an map where key and value are strings.
 func (kp *KeyPrefixedDataProvider) GetStringMapString(key string) (res map[string]string, err error) {
 	return kp.delegate.GetStringMapString(kp.makeKey(key))
-}
-
-// GetBytesCount tries to retrieve the value associated with the key as a size in bytes.
-func (kp *KeyPrefixedDataProvider) GetBytesCount(key string) (BytesCount, error) {
-	return kp.delegate.GetBytesCount(kp.makeKey(key))
 }
 
 // Unmarshal unmarshals the config into a Struct.

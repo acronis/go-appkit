@@ -17,80 +17,104 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// BytesCount represents a number of bytes that can be parsed from JSON and YAML.
-type BytesCount uint64
+// ByteSize represents a size in bytes that can be parsed from JSON and YAML.
+// This type is intended to be used in configuration structures
+// and allows parsing both integers and human-readable strings (e.g. "42GB").
+type ByteSize uint64
 
 // UnmarshalJSON allows decoding from both integers and human-readable strings.
 // Implements json.Unmarshaler interface.
-func (b *BytesCount) UnmarshalJSON(data []byte) error {
+func (b *ByteSize) UnmarshalJSON(data []byte) error {
 	s := strings.Trim(string(data), `"`)
-	if num, err := strconv.ParseUint(s, 10, 64); err == nil {
-		*b = BytesCount(num)
+	if num, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if num < 0 {
+			return fmt.Errorf("negative value is not allowed: %d", num)
+		}
+		*b = ByteSize(num)
 		return nil
 	}
-
-	if num, err := bytefmt.ToBytes(s); err == nil {
-		*b = BytesCount(num)
-		return nil
+	bs, err := parseByteSizeFromString(s)
+	if err != nil {
+		return err
 	}
-
-	return fmt.Errorf("invalid bytes format: %s", s)
+	*b = bs
+	return nil
 }
 
 // UnmarshalYAML allows decoding from YAML.
 // Implements yaml.Unmarshaler interface.
-func (b *BytesCount) UnmarshalYAML(value *yaml.Node) error {
-	var raw string
-	if err := value.Decode(&raw); err == nil {
-		if num, err := bytefmt.ToBytes(raw); err == nil {
-			*b = BytesCount(num)
-			return nil
-		}
-	}
-
+func (b *ByteSize) UnmarshalYAML(value *yaml.Node) error {
 	var num uint64
 	if err := value.Decode(&num); err == nil {
-		*b = BytesCount(num)
+		*b = ByteSize(num)
 		return nil
 	}
-
+	var s string
+	if err := value.Decode(&s); err == nil {
+		bs, parseErr := parseByteSizeFromString(s)
+		if parseErr != nil {
+			return parseErr
+		}
+		*b = bs
+		return nil
+	}
 	return fmt.Errorf("invalid bytes format: %v", value)
 }
 
 // UnmarshalText allows decoding from text.
 // Implements encoding.TextUnmarshaler interface, which is used by mapstructure.TextUnmarshallerHookFunc.
-func (b *BytesCount) UnmarshalText(text []byte) error {
+func (b *ByteSize) UnmarshalText(text []byte) error {
 	return b.UnmarshalJSON(text)
 }
 
 // String returns the human-readable string representation.
 // Implements fmt.Stringer interface.
-func (b BytesCount) String() string {
+func (b ByteSize) String() string {
 	return bytefmt.ByteSize(uint64(b))
 }
 
 // MarshalJSON encodes as a human-readable string in JSON.
 // Implements json.Marshaler interface.
-func (b BytesCount) MarshalJSON() ([]byte, error) {
+func (b ByteSize) MarshalJSON() ([]byte, error) {
 	return json.Marshal(b.String())
 }
 
 // MarshalYAML encodes as a human-readable string in YAML.
 // Implements yaml.Marshaler interface.
-func (b BytesCount) MarshalYAML() (interface{}, error) {
+func (b ByteSize) MarshalYAML() (interface{}, error) {
 	return b.String(), nil
 }
 
 // MarshalText encodes as a human-readable string in text.
 // Implements encoding.TextMarshaler interface.
-func (b *BytesCount) MarshalText() ([]byte, error) {
+func (b *ByteSize) MarshalText() ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
+func parseByteSizeFromString(s string) (ByteSize, error) {
+	v := strings.TrimSpace(s)
+
+	// Handle k8s power-of-two values.
+	for _, k8sByteSuffix := range [...]string{"Ki", "Mi", "Gi", "Ti", "Pi", "Ei"} {
+		if strings.HasSuffix(v, k8sByteSuffix) {
+			v = v[:len(v)-1]
+			break
+		}
+	}
+
+	num, err := bytefmt.ToBytes(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid byte size format (%s): %w", s, err)
+	}
+	return ByteSize(num), nil
+}
+
 // TimeDuration represents a time duration that can be parsed from JSON and YAML.
+// This type is intended to be used in configuration structures
+// and allows parsing both integers (nanoseconds) and human-readable strings (e.g. "1h30m").
 type TimeDuration time.Duration
 
-// UnmarshalJSON allows decoding from both integers (milliseconds) and human-readable strings.
+// UnmarshalJSON allows decoding from JSON and supports both integers (nanoseconds) and human-readable strings.
 // Implements json.Unmarshaler interface.
 func (d *TimeDuration) UnmarshalJSON(data []byte) error {
 	s := strings.Trim(string(data), `"`)
@@ -98,7 +122,7 @@ func (d *TimeDuration) UnmarshalJSON(data []byte) error {
 		if num < 0 {
 			return fmt.Errorf("negative value is not allowed: %d", num)
 		}
-		*d = TimeDuration(time.Duration(num) * time.Millisecond)
+		*d = TimeDuration(num)
 		return nil
 	}
 
@@ -110,7 +134,7 @@ func (d *TimeDuration) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("invalid duration format: %s", s)
 }
 
-// UnmarshalYAML allows decoding from YAML.
+// UnmarshalYAML allows decoding from YAML and supports both integers (nanoseconds) and human-readable strings.
 // Implements yaml.Unmarshaler interface.
 func (d *TimeDuration) UnmarshalYAML(value *yaml.Node) error {
 	var raw string
@@ -127,7 +151,7 @@ func (d *TimeDuration) UnmarshalYAML(value *yaml.Node) error {
 		if num < 0 {
 			return fmt.Errorf("negative value is not allowed: %d", num)
 		}
-		*d = TimeDuration(time.Duration(num) * time.Millisecond)
+		*d = TimeDuration(num)
 		return nil
 	}
 

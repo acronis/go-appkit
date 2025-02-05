@@ -15,21 +15,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestBytesCount_UnmarshalJSON(t *testing.T) {
+func TestByteSize_UnmarshalJSON(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    BytesCount
+		want    ByteSize
 		wantErr bool
 	}{
-		{"Valid Integer", `1024`, BytesCount(1024), false},
-		{"Valid Human-Readable", `"10MB"`, BytesCount(10 * 1024 * 1024), false},
+		{"Valid Integer", `1024`, ByteSize(1024), false},
+		{"Valid Human-Readable, MB", `"10MB"`, ByteSize(10 * 1024 * 1024), false},
+		{"Valid Human-Readable, MiB", `"10MiB"`, ByteSize(10 * 1024 * 1024), false},
+		{"Valid Human-Readable, k8s format, Mi", `"10Mi"`, ByteSize(10 * 1024 * 1024), false},
 		{"Invalid Format", `"invalid"`, 0, true},
 		{"Negative Value", `"-1024"`, 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var b BytesCount
+			var b ByteSize
 			err := json.Unmarshal([]byte(tt.input), &b)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -41,21 +43,23 @@ func TestBytesCount_UnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestBytesCount_UnmarshalYAML(t *testing.T) {
+func TestByteSize_UnmarshalYAML(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    BytesCount
+		want    ByteSize
 		wantErr bool
 	}{
-		{"Valid Integer", "size: 2048", BytesCount(2048), false},
-		{"Valid Human-Readable", "size: 20MB", BytesCount(20 * 1024 * 1024), false},
+		{"Valid Integer", "size: 2048", ByteSize(2048), false},
+		{"Valid Human-Readable, MB", "size: 20MB", ByteSize(20 * 1024 * 1024), false},
+		{"Valid Human-Readable, MiB", "size: 20MiB", ByteSize(20 * 1024 * 1024), false},
+		{"Valid Human-Readable, k8s format, Mi", "size: 20Mi", ByteSize(20 * 1024 * 1024), false},
 		{"Invalid Format", "size: invalid", 0, true},
 		{"Negative Value", "size: -1024", 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var cfg struct{ Size BytesCount }
+			var cfg struct{ Size ByteSize }
 			err := yaml.Unmarshal([]byte(tt.input), &cfg)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -67,21 +71,23 @@ func TestBytesCount_UnmarshalYAML(t *testing.T) {
 	}
 }
 
-func TestBytesCount_UnmarshalText(t *testing.T) {
+func TestByteSize_UnmarshalText(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    BytesCount
+		want    ByteSize
 		wantErr bool
 	}{
-		{"Valid Integer", "4096", BytesCount(4096), false},
-		{"Valid Human-Readable", "20MB", BytesCount(20 * 1024 * 1024), false},
+		{"Valid Integer", "4096", ByteSize(4096), false},
+		{"Valid Human-Readable, MB", `"10MB"`, ByteSize(10 * 1024 * 1024), false},
+		{"Valid Human-Readable, MiB", `"10MiB"`, ByteSize(10 * 1024 * 1024), false},
+		{"Valid Human-Readable, k8s format, Mi", `"10Mi"`, ByteSize(10 * 1024 * 1024), false},
 		{"Invalid Format", "invalid", 0, true},
 		{"Negative Value", "-1024", 0, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var b BytesCount
+			var b ByteSize
 			err := b.UnmarshalText([]byte(tt.input))
 			if tt.wantErr {
 				require.Error(t, err)
@@ -93,16 +99,16 @@ func TestBytesCount_UnmarshalText(t *testing.T) {
 	}
 }
 
-func TestBytesCount_String(t *testing.T) {
+func TestByteSize_String(t *testing.T) {
 	tests := []struct {
 		name  string
-		input BytesCount
+		input ByteSize
 		want  string
 	}{
-		{"Bytes", BytesCount(512), "512B"},
-		{"Kilobytes", BytesCount(1024), "1K"},
-		{"Megabytes", BytesCount(2 * 1024 * 1024), "2M"},
-		{"Gigabytes", BytesCount(3 * 1024 * 1024 * 1024), "3G"},
+		{"Bytes", ByteSize(512), "512B"},
+		{"Kilobytes", ByteSize(1024), "1K"},
+		{"Megabytes", ByteSize(2 * 1024 * 1024), "2M"},
+		{"Gigabytes", ByteSize(3 * 1024 * 1024 * 1024), "3G"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -111,15 +117,15 @@ func TestBytesCount_String(t *testing.T) {
 	}
 }
 
-func TestBytesCount_MarshalJSON(t *testing.T) {
+func TestByteSize_MarshalJSON(t *testing.T) {
 	tests := []struct {
 		name  string
-		input BytesCount
+		input ByteSize
 		want  string
 	}{
-		{"Bytes", BytesCount(256), `"256B"`},
-		{"Kilobytes", BytesCount(1024), `"1K"`},
-		{"Megabytes", BytesCount(5 * 1024 * 1024), `"5M"`},
+		{"Bytes", ByteSize(256), `"256B"`},
+		{"Kilobytes", ByteSize(1024), `"1K"`},
+		{"Megabytes", ByteSize(5 * 1024 * 1024), `"5M"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -130,15 +136,15 @@ func TestBytesCount_MarshalJSON(t *testing.T) {
 	}
 }
 
-func TestBytesCount_MarshalYAML(t *testing.T) {
+func TestByteSize_MarshalYAML(t *testing.T) {
 	tests := []struct {
 		name  string
-		input BytesCount
+		input ByteSize
 		want  string
 	}{
-		{"Bytes", BytesCount(128), "128B\n"},
-		{"Kilobytes", BytesCount(1024), "1K\n"},
-		{"Megabytes", BytesCount(7 * 1024 * 1024), "7M\n"},
+		{"Bytes", ByteSize(128), "128B\n"},
+		{"Kilobytes", ByteSize(1024), "1K\n"},
+		{"Megabytes", ByteSize(7 * 1024 * 1024), "7M\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,15 +155,15 @@ func TestBytesCount_MarshalYAML(t *testing.T) {
 	}
 }
 
-func TestBytesCount_MarshalText(t *testing.T) {
+func TestByteSize_MarshalText(t *testing.T) {
 	tests := []struct {
 		name  string
-		input BytesCount
+		input ByteSize
 		want  string
 	}{
-		{"Bytes", BytesCount(256), "256B"},
-		{"Kilobytes", BytesCount(1024), "1K"},
-		{"Megabytes", BytesCount(5 * 1024 * 1024), "5M"},
+		{"Bytes", ByteSize(256), "256B"},
+		{"Kilobytes", ByteSize(1024), "1K"},
+		{"Megabytes", ByteSize(5 * 1024 * 1024), "5M"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -175,7 +181,7 @@ func TestTimeDuration_UnmarshalJSON(t *testing.T) {
 		want    TimeDuration
 		wantErr bool
 	}{
-		{"Valid Integer", `1000`, TimeDuration(time.Second), false},
+		{"Valid Integer", `1000000000`, TimeDuration(time.Second), false},
 		{"Valid Human-Readable", `"1s"`, TimeDuration(time.Second), false},
 		{"Invalid Format", `"invalid"`, 0, true},
 		{"Negative Value", `"-1000"`, 0, true},
@@ -201,7 +207,7 @@ func TestTimeDuration_UnmarshalYAML(t *testing.T) {
 		want    TimeDuration
 		wantErr bool
 	}{
-		{"Valid Integer", "duration: 2000", TimeDuration(2 * time.Second), false},
+		{"Valid Integer", "duration: 2000000000", TimeDuration(2 * time.Second), false},
 		{"Valid Human-Readable", "duration: 2s", TimeDuration(2 * time.Second), false},
 		{"Invalid Format", "duration: invalid", 0, true},
 		{"Negative Value", "duration: -2000", 0, true},

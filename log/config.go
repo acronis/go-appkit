@@ -194,11 +194,11 @@ type FileOutputConfig struct {
 
 // FileRotationConfig is a configuration for file log rotation.
 type FileRotationConfig struct {
-	Compress         bool              `mapstructure:"compress" yaml:"compress" json:"compress"`
-	MaxSize          config.BytesCount `mapstructure:"maxSize" yaml:"maxSize" json:"maxSize"`
-	MaxBackups       int               `mapstructure:"maxBackups" yaml:"maxBackups" json:"maxBackups"`
-	MaxAgeDays       int               `mapstructure:"maxAgeDays" yaml:"maxAgeDays" json:"maxAgeDays"`
-	LocalTimeInNames bool              `mapstructure:"localTimeInNames" yaml:"localTimeInNames" json:"localTimeInNames"`
+	Compress         bool            `mapstructure:"compress" yaml:"compress" json:"compress"`
+	MaxSize          config.ByteSize `mapstructure:"maxSize" yaml:"maxSize" json:"maxSize"`
+	MaxBackups       int             `mapstructure:"maxBackups" yaml:"maxBackups" json:"maxBackups"`
+	MaxAgeDays       int             `mapstructure:"maxAgeDays" yaml:"maxAgeDays" json:"maxAgeDays"`
+	LocalTimeInNames bool            `mapstructure:"localTimeInNames" yaml:"localTimeInNames" json:"localTimeInNames"`
 }
 
 type ErrorConfig struct {
@@ -309,7 +309,7 @@ func (c *Config) setFileOutputConfig(dp config.DataProvider) error {
 		return err
 	}
 
-	if c.File.Rotation.MaxSize, err = dp.GetBytesCount(cfgKeyFileRotationMaxSize); err != nil {
+	if c.File.Rotation.MaxSize, err = dp.GetSizeInBytes(cfgKeyFileRotationMaxSize); err != nil {
 		return err
 	}
 	if c.File.Rotation.MaxSize < MinFileRotationMaxSizeBytes {

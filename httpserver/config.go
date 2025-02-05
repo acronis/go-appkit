@@ -200,7 +200,7 @@ type LimitsConfig struct {
 	MaxRequests int `mapstructure:"maxRequests" yaml:"maxRequests" json:"maxRequests"`
 
 	// MaxBodySizeBytes is the maximum size of the request body in bytes.
-	MaxBodySizeBytes config.BytesCount `mapstructure:"maxBodySize" yaml:"maxBodySize" json:"maxBodySize"`
+	MaxBodySizeBytes config.ByteSize `mapstructure:"maxBodySize" yaml:"maxBodySize" json:"maxBodySize"`
 }
 
 // Set sets limit server configuration values from config.DataProvider.
@@ -214,7 +214,7 @@ func (l *LimitsConfig) Set(dp config.DataProvider) error {
 		return dp.WrapKeyErr(cfgKeyServerLimitsMaxRequests, fmt.Errorf("maxRequests must be positive"))
 	}
 
-	if l.MaxBodySizeBytes, err = dp.GetBytesCount(cfgKeyServerLimitsMaxBodySize); err != nil {
+	if l.MaxBodySizeBytes, err = dp.GetSizeInBytes(cfgKeyServerLimitsMaxBodySize); err != nil {
 		return dp.WrapKeyErr(cfgKeyServerLimitsMaxBodySize, err)
 	}
 

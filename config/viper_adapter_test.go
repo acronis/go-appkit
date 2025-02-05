@@ -185,7 +185,7 @@ func TestViperAdapter_GetSizeInBytes(t *testing.T) {
 	const key = "sizeinbytes.key"
 
 	t.Run("attempt to get invalid size in bytes", func(t *testing.T) {
-		invalidVals := []interface{}{10, true, "not bytes", []string{"foo", "bar"}, "1s", "1h"}
+		invalidVals := []interface{}{true, "not bytes", []string{"foo", "bar"}, "1s", "1h"}
 		for _, invVal := range invalidVals {
 			viperAdapter.Set(key, invVal)
 			_, err := viperAdapter.GetSizeInBytes(key)
@@ -194,11 +194,12 @@ func TestViperAdapter_GetSizeInBytes(t *testing.T) {
 	})
 
 	t.Run("get size in bytes", func(t *testing.T) {
-		testData := map[string]uint64{
-			"1K":  1024,
-			"2M":  1024 * 1024 * 2,
-			"3G":  1024 * 1024 * 1024 * 3,
-			"4Gi": 1024 * 1024 * 1024 * 4, // k8s format.
+		testData := map[string]ByteSize{
+			"1K":   1024,
+			"2M":   1024 * 1024 * 2,
+			"3G":   1024 * 1024 * 1024 * 3,
+			"4Gi":  1024 * 1024 * 1024 * 4, // k8s format.
+			"5Kib": 1024 * 5,
 		}
 		for val, want := range testData {
 			viperAdapter.Set(key, val)
