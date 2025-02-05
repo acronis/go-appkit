@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"code.cloudfoundry.org/bytefmt"
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 )
@@ -132,26 +131,31 @@ func (va *ViperAdapter) GetStringSlice(key string) (res []string, err error) {
 }
 
 // GetSizeInBytes tries to retrieve the value associated with the key as a size in bytes.
-func (va *ViperAdapter) GetSizeInBytes(key string) (uint64, error) {
-	sizeStr, err := va.GetString(key)
-	if err != nil {
-		return 0, WrapKeyErrIfNeeded(key, err)
-	}
-	if sizeStr == "" {
+func (va *ViperAdapter) GetSizeInBytes(key string) (ByteSize, error) {
+	val := va.Get(key)
+	if val == nil {
 		return 0, nil
 	}
-	// Handle k8s power-of-two values.
-	for _, k8sByteSuffix := range [...]string{"Ki", "Mi", "Gi", "Ti", "Pi", "Ei"} {
-		if strings.HasSuffix(sizeStr, k8sByteSuffix) {
-			sizeStr = sizeStr[:len(sizeStr)-1]
-			break
+	switch v := val.(type) {
+	case string:
+		return parseByteSizeFromString(v)
+
+	case int, int8, int16, int32, int64: // Handle all signed integers
+		num := cast.ToInt64(val)
+		if num < 0 {
+			return 0, fmt.Errorf("negative value is not allowed (%d)", num)
 		}
+		return ByteSize(num), nil
+
+	case uint, uint8, uint16, uint32, uint64: // Handle all unsigned integers
+		return ByteSize(cast.ToUint64(val)), nil
+
+	case ByteSize:
+		return v, nil
+
+	default:
+		return 0, fmt.Errorf("unsupported type for ByteSize (%T)", val)
 	}
-	res, err := bytefmt.ToBytes(sizeStr)
-	if err != nil {
-		return 0, WrapKeyErrIfNeeded(key, err)
-	}
-	return res, nil
 }
 
 // GetStringFromSet tries to retrieve the value associated with the key as a string from the specified set.
@@ -170,7 +174,11 @@ func (va *ViperAdapter) GetStringFromSet(key string, set []string, ignoreCase bo
 
 // GetDuration tries to retrieve the value associated with the key as a duration.
 func (va *ViperAdapter) GetDuration(key string) (res time.Duration, err error) {
-	res, err = cast.ToDurationE(va.Get(key))
+	val := va.Get(key)
+	if val == nil {
+		return
+	}
+	res, err = cast.ToDurationE(val)
 	err = WrapKeyErrIfNeeded(key, err)
 	return
 }

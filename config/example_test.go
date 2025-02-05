@@ -50,7 +50,7 @@ type logConfig struct {
 	File  struct {
 		Path     string
 		Rotation struct {
-			MaxSize    uint64
+			MaxSize    ByteSize
 			MaxBackups int
 			Compress   bool
 		}

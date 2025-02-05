@@ -48,8 +48,9 @@ type DataProvider interface {
 	GetStringFromSet(key string, set []string, ignoreCase bool) (string, error)
 	GetStringSlice(key string) ([]string, error)
 	GetDuration(key string) (time.Duration, error)
-	GetSizeInBytes(key string) (uint64, error)
+	GetSizeInBytes(key string) (ByteSize, error)
 	GetStringMapString(key string) (map[string]string, error)
+
 	Unmarshal(rawVal interface{}, opts ...DecoderConfigOption) error
 	UnmarshalKey(key string, rawVal interface{}, opts ...DecoderConfigOption) error
 

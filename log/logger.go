@@ -250,10 +250,10 @@ func makeLogfAppenderWithWriter(cfg *Config, w io.Writer) logf.Appender {
 	timeEncoder := logf.RFC3339NanoTimeEncoder
 
 	var errorEncoder logf.ErrorEncoder
-	if cfg.ErrorVerboseSuffix != "" || cfg.ErrorNoVerbose {
+	if cfg.Error.VerboseSuffix != "" || cfg.Error.NoVerbose {
 		errorEncoder = logf.NewErrorEncoder(logf.ErrorEncoderConfig{
-			NoVerboseField:     cfg.ErrorNoVerbose,
-			VerboseFieldSuffix: cfg.ErrorVerboseSuffix,
+			NoVerboseField:     cfg.Error.NoVerbose,
+			VerboseFieldSuffix: cfg.Error.VerboseSuffix,
 		})
 	}
 

@@ -105,7 +105,7 @@ func (kp *KeyPrefixedDataProvider) GetStringSlice(key string) (res []string, err
 }
 
 // GetSizeInBytes tries to retrieve the value associated with the key as a size in bytes.
-func (kp *KeyPrefixedDataProvider) GetSizeInBytes(key string) (uint64, error) {
+func (kp *KeyPrefixedDataProvider) GetSizeInBytes(key string) (ByteSize, error) {
 	return kp.delegate.GetSizeInBytes(kp.makeKey(key))
 }
 

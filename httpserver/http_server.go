@@ -122,10 +122,10 @@ func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { 
 func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *HTTPServer {
 	httpServer := &http.Server{
 		Addr:              cfg.Address,
-		WriteTimeout:      cfg.Timeouts.Write,
-		ReadTimeout:       cfg.Timeouts.Read,
-		ReadHeaderTimeout: cfg.Timeouts.ReadHeader,
-		IdleTimeout:       cfg.Timeouts.Idle,
+		WriteTimeout:      time.Duration(cfg.Timeouts.Write),
+		ReadTimeout:       time.Duration(cfg.Timeouts.Read),
+		ReadHeaderTimeout: time.Duration(cfg.Timeouts.ReadHeader),
+		IdleTimeout:       time.Duration(cfg.Timeouts.Idle),
 		Handler:           handler,
 	}
 
@@ -148,7 +148,7 @@ func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *
 		UnixSocketPath:  cfg.UnixSocketPath,
 		Logger:          logger,
 		TLS:             cfg.TLS,
-		ShutdownTimeout: cfg.Timeouts.Shutdown,
+		ShutdownTimeout: time.Duration(cfg.Timeouts.Shutdown),
 		HTTPRouter:      router,
 	}
 }
