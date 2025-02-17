@@ -96,6 +96,22 @@ func (rt *LoggingRoundTripper) getLogger(ctx context.Context) log.FieldLogger {
 }
 
 // RoundTrip adds logging capabilities to the HTTP transport.
+// It logs HTTP requests and responses, tracking execution time and success/failure status.
+//
+// Logging behavior:
+// - If logging is disabled (no logger), the request is simply forwarded.
+// - If the request completes successfully and is not slow, it may be ignored based on logging mode.
+// - Slow requests, failed requests, and configured conditions determine log level (Info, Warn, Error).
+//
+// Additional logged information:
+//   - HTTP method and URL.
+//   - Response status code and elapsed time.
+//   - Client type if available.
+//   - X-Request-ID from request headers.
+//   - Request type extracted from the context.
+//   - The request duration in milliseconds is accumulated in LoggingParams, allowing tracking of the total time
+//     spent on external requests when the handler execution is finalized. Note that this value is accurate only for
+//     sequential requests.
 func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
 	logger := rt.getLogger(ctx)

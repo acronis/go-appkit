@@ -21,7 +21,7 @@ func TestLoggingParams_SetTimeSlotDurationMs(t *testing.T) {
 
 	lp.AddTimeSlotInt("slot1", 100)
 	lp.AddTimeSlotInt("slot2", 200)
-	lp.fields = append(lp.fields, log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.timeSlots})
+	lp.fields = append(lp.fields, log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.getTimeSlots()})
 
 	expected := LoggingParams{
 		fields: []log.Field{
@@ -44,7 +44,7 @@ func TestLoggingParams_SetTimeSlotDuration(t *testing.T) {
 
 	lp.AddTimeSlotDurationInMs("slot1", 1*time.Second)
 	lp.AddTimeSlotDurationInMs("slot2", 2*time.Second)
-	lp.fields = append(lp.fields, log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.timeSlots})
+	lp.fields = append(lp.fields, log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.getTimeSlots()})
 
 	expected := LoggingParams{
 		fields: []log.Field{
