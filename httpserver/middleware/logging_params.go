@@ -7,6 +7,7 @@ Released under MIT license.
 package middleware
 
 import (
+	"sync"
 	"time"
 
 	"github.com/ssgreg/logf"
@@ -27,8 +28,9 @@ func (lm loggableIntMap) EncodeLogfObject(e logf.FieldEncoder) error {
 // LoggingParams stores parameters for the Logging middleware
 // that may be modified dynamically by the other underlying middlewares/handlers.
 type LoggingParams struct {
-	fields    []log.Field
-	timeSlots loggableIntMap
+	fields      []log.Field
+	timeSlots   loggableIntMap
+	timeSlotsMu sync.RWMutex
 }
 
 // ExtendFields extends list of fields that will be logged by the Logging middleware.
@@ -47,8 +49,16 @@ func (lp *LoggingParams) AddTimeSlotDurationInMs(name string, dur time.Duration)
 }
 
 func (lp *LoggingParams) setIntMapFieldValue(fieldName string, value int64) {
+	lp.timeSlotsMu.Lock()
+	defer lp.timeSlotsMu.Unlock()
 	if lp.timeSlots == nil {
 		lp.timeSlots = make(loggableIntMap, 1)
 	}
 	lp.timeSlots[fieldName] += value
+}
+
+func (lp *LoggingParams) getTimeSlots() loggableIntMap {
+	lp.timeSlotsMu.RLock()
+	defer lp.timeSlotsMu.RUnlock()
+	return lp.timeSlots
 }
