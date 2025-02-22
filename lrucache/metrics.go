@@ -156,3 +156,5 @@ func (disabledMetrics) SetAmount(int)    {}
 func (disabledMetrics) IncHits()         {}
 func (disabledMetrics) IncMisses()       {}
 func (disabledMetrics) AddEvictions(int) {}
+
+var disabledMetricsCollector = disabledMetrics{}
