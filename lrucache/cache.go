@@ -64,7 +64,7 @@ func NewWithOpts[K comparable, V any](maxEntries int, metricsCollector MetricsCo
 		return nil, fmt.Errorf("defaultTTL must be greater or equal to 0 (no expiration)")
 	}
 	if metricsCollector == nil {
-		metricsCollector = disabledMetrics{}
+		metricsCollector = disabledMetricsCollector
 	}
 
 	return &LRUCache[K, V]{
@@ -81,7 +81,7 @@ func NewWithOpts[K comparable, V any](maxEntries int, metricsCollector MetricsCo
 func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.get(key)
+	return c.get(key, true)
 }
 
 // Add adds a value to the cache with the provided key and type.
@@ -94,6 +94,7 @@ func (c *LRUCache[K, V]) Add(key K, value V) {
 // If the cache is full, the oldest entry will be removed.
 // Please note that expired entries are not removed immediately,
 // but only when they are accessed or during periodic cleanup (see RunPeriodicCleanup).
+// If the TTL is less than or equal to 0, the value will not expire.
 func (c *LRUCache[K, V]) AddWithTTL(key K, value V, ttl time.Duration) {
 	var expiresAt time.Time
 	if ttl > 0 {
@@ -113,8 +114,7 @@ func (c *LRUCache[K, V]) AddWithTTL(key K, value V, ttl time.Duration) {
 
 // GetOrAdd returns a value from the cache by the provided key,
 // and adds a new value with the default TTL if the key does not exist.
-// The new value is provided by the valueProvider function.
-// The function is called only if the key does not exist.
+// The new value is provided by the valueProvider function, which is called only if the key does not exist.
 // Note that the function is called under the LRUCache lock, so it should be fast and non-blocking.
 // If you need to perform a blocking operation, consider using GetOrLoad instead.
 func (c *LRUCache[K, V]) GetOrAdd(key K, valueProvider func() V) (value V, exists bool) {
@@ -123,15 +123,15 @@ func (c *LRUCache[K, V]) GetOrAdd(key K, valueProvider func() V) (value V, exist
 
 // GetOrAddWithTTL returns a value from the cache by the provided key,
 // and adds a new value with the specified TTL if the key does not exist.
-// The new value is provided by the valueProvider function.
-// The function is called only if the key does not exist.
+// The new value is provided by the valueProvider function, which is called only if the key does not exist.
 // Note that the function is called under the LRUCache lock, so it should be fast and non-blocking.
-// If you need to perform a blocking operation, consider using GetOrLoad instead.
+// If you need to perform a blocking operation, consider using GetOrLoadWithTTL instead.
+// If the TTL is less than or equal to 0, the value will not expire.
 func (c *LRUCache[K, V]) GetOrAddWithTTL(key K, valueProvider func() V, ttl time.Duration) (value V, exists bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if value, exists = c.get(key); exists {
+	if value, exists = c.get(key, true); exists {
 		return value, exists
 	}
 
@@ -146,18 +146,52 @@ func (c *LRUCache[K, V]) GetOrAddWithTTL(key K, valueProvider func() V, ttl time
 
 // GetOrLoad returns a value from the cache by the provided key,
 // and loads a new value if the key does not exist.
-// The new value is provided by the loadValue function.
-// The function is called only if the key does not exist.
-// Note that the single flight pattern is used to prevent multiple concurrent calls for the same key.
+// The new value is provided by the loadValue function, which is called only if the key does not exist.
+// The loadValue function returns the value and error.
+// If the loadValue function returns an error, the value will not be added to the cache.
+// Single flight pattern is used to prevent multiple concurrent calls for the same key.
 func (c *LRUCache[K, V]) GetOrLoad(
+	key K, loadValue func(K) (value V, err error),
+) (value V, exists bool, err error) {
+	return c.GetOrLoadWithTTL(key, func(k K) (value V, ttl time.Duration, err error) {
+		val, err := loadValue(k)
+		return val, c.defaultTTL, err
+	})
+}
+
+// GetOrLoadWithTTL returns a value from the cache by the provided key,
+// and loads a new value if the key does not exist.
+// The new value is provided by the loadValue function, which is called only if the key does not exist.
+// The loadValue function returns the value, TTL, and error.
+// If the TTL is less than or equal to 0, the value will not expire.
+// If the loadValue function returns an error, the value will not be added to the cache.
+// Single flight pattern is used to prevent multiple concurrent calls for the same key.
+func (c *LRUCache[K, V]) GetOrLoadWithTTL(
 	key K, loadValue func(K) (value V, ttl time.Duration, err error),
 ) (value V, exists bool, err error) {
-	if val, ok := c.Get(key); ok {
+	// We have to use a separate function to get the value without modifying hits
+	// and misses metrics because of the single flight pattern and the double check.
+	get := func(key K) (value V, exists bool) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.get(key, false)
+	}
+
+	defer func() {
+		// We have to increment metrics after the actual call because of the single flight pattern and the double check.
+		if exists {
+			c.metricsCollector.IncHits()
+		} else {
+			c.metricsCollector.IncMisses()
+		}
+	}()
+
+	if val, ok := get(key); ok {
 		return val, true, nil
 	}
 
 	result, doErr := c.sfGroup.Do(key, func() (singleFlightCallResult[V], error) {
-		if val, ok := c.Get(key); ok { // double check after possible concurrent call
+		if val, ok := get(key); ok { // double check after possible concurrent call
 			return singleFlightCallResult[V]{value: val, exists: true}, nil
 		}
 		val, ttl, valErr := loadValue(key)
@@ -234,10 +268,12 @@ func (c *LRUCache[K, V]) Len() int {
 	return len(c.cache)
 }
 
-func (c *LRUCache[K, V]) get(key K) (value V, ok bool) {
+func (c *LRUCache[K, V]) get(key K, incHitsAndMisses bool) (value V, ok bool) {
 	elem, hit := c.cache[key]
 	if !hit {
-		c.metricsCollector.IncMisses()
+		if incHitsAndMisses {
+			c.metricsCollector.IncMisses()
+		}
 		return value, false
 	}
 	entry := elem.Value.(*cacheEntry[K, V])
@@ -245,11 +281,15 @@ func (c *LRUCache[K, V]) get(key K) (value V, ok bool) {
 		c.lruList.Remove(elem)
 		delete(c.cache, key)
 		c.metricsCollector.SetAmount(len(c.cache))
-		c.metricsCollector.IncMisses()
+		if incHitsAndMisses {
+			c.metricsCollector.IncMisses()
+		}
 		return value, false
 	}
 	c.lruList.MoveToFront(elem)
-	c.metricsCollector.IncHits()
+	if incHitsAndMisses {
+		c.metricsCollector.IncHits()
+	}
 	return entry.value, true
 }
 
