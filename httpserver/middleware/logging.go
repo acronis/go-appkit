@@ -133,7 +133,9 @@ func (h *loggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		if duration >= h.opts.SlowRequestThreshold {
 			lp.AddTimeSlotDurationInMs("writing_response_ms", wrw.ElapsedTime())
 			lp.fields = append(
-				lp.fields, log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.getTimeSlots()},
+				lp.fields,
+				log.Bool("slow_request", true),
+				log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.getTimeSlots()},
 			)
 		}
 		logger.Info(
