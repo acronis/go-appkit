@@ -346,7 +346,8 @@ func TestLRUCache_PeriodicCleanup(t *testing.T) {
 
 func TestLRUCache_GetOrLoad(t *testing.T) {
 	t.Run("key exists", func(t *testing.T) {
-		cache, err := New[string, int](10, nil)
+		metrics := NewPrometheusMetrics()
+		cache, err := New[string, int](10, metrics)
 		require.NoError(t, err)
 
 		// Pre-populate the cache.
@@ -362,10 +363,13 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.True(t, exists)
 		require.Equal(t, 42, val)
 		require.Equal(t, 0, callCount)
+
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, HitsTotal: 1}, metrics)
 	})
 
 	t.Run("load value, success", func(t *testing.T) {
-		cache, err := New[string, int](10, nil)
+		metrics := NewPrometheusMetrics()
+		cache, err := New[string, int](10, metrics)
 		require.NoError(t, err)
 
 		callCount := 0
@@ -379,6 +383,7 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.False(t, exists) // fresh load returns exists == false
 		require.Equal(t, 456, val)
 		require.Equal(t, 1, callCount)
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, MissesTotal: 1}, metrics)
 
 		// Second call: the value should be cached.
 		val, exists, err = cache.GetOrLoad("key", func(key string) (int, error) {
@@ -389,12 +394,14 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.True(t, exists)
 		require.Equal(t, 456, val)
 		require.Equal(t, 1, callCount) // load function is not invoked again
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, MissesTotal: 1, HitsTotal: 1}, metrics)
 	})
 
 	t.Run("load value, error", func(t *testing.T) {
 		loadErr := errors.New("load error")
 
-		cache, err := New[string, int](10, nil)
+		metrics := NewPrometheusMetrics()
+		cache, err := New[string, int](10, metrics)
 		require.NoError(t, err)
 
 		callCount := 0
@@ -406,6 +413,7 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		})
 		require.ErrorIs(t, err, loadErr)
 		require.Equal(t, 1, callCount)
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 0, MissesTotal: 1}, metrics)
 
 		// The next call should try to load again.
 		_, _, err = cache.GetOrLoad("errorKey", func(key string) (int, error) {
@@ -414,10 +422,12 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		})
 		require.ErrorIs(t, err, loadErr)
 		require.Equal(t, 2, callCount)
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 0, MissesTotal: 2}, metrics)
 	})
 
 	t.Run("load value, single-flight", func(t *testing.T) {
-		cache, err := NewWithOpts[string, int](10, nil, Options{DefaultTTL: time.Minute})
+		metrics := NewPrometheusMetrics()
+		cache, err := NewWithOpts[string, int](10, metrics, Options{DefaultTTL: time.Minute})
 		require.NoError(t, err)
 
 		var callCount atomic.Int64
@@ -452,6 +462,7 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 			require.False(t, existsFlags[i])
 		}
 		require.EqualValues(t, 1, callCount.Load())
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, MissesTotal: numGoroutines}, metrics)
 
 		// A later call should find the key in the cache.
 		v, exists, err := cache.GetOrLoad("sf-key", loadFunc)
@@ -459,6 +470,7 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.True(t, exists)
 		require.Equal(t, 999, v)
 		require.EqualValues(t, 1, callCount.Load())
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, MissesTotal: numGoroutines, HitsTotal: 1}, metrics)
 	})
 }
 

@@ -146,10 +146,15 @@ func (c *LRUCache[K, V]) GetOrAddWithTTL(key K, valueProvider func() V, ttl time
 
 // GetOrLoad returns a value from the cache by the provided key,
 // and loads a new value if the key does not exist.
+//
 // The new value is provided by the loadValue function, which is called only if the key does not exist.
 // The loadValue function returns the value and error.
 // If the loadValue function returns an error, the value will not be added to the cache.
+//
 // Single flight pattern is used to prevent multiple concurrent calls for the same key.
+// If executing goroutine panics, other goroutines will receive PanicError.
+// PanicError contains the original panic value and stack trace.
+// If executing goroutine calls runtime.Goexit, other goroutines will receive ErrGoexit.
 func (c *LRUCache[K, V]) GetOrLoad(
 	key K, loadValue func(K) (value V, err error),
 ) (value V, exists bool, err error) {
@@ -161,11 +166,16 @@ func (c *LRUCache[K, V]) GetOrLoad(
 
 // GetOrLoadWithTTL returns a value from the cache by the provided key,
 // and loads a new value if the key does not exist.
+//
 // The new value is provided by the loadValue function, which is called only if the key does not exist.
 // The loadValue function returns the value, TTL, and error.
 // If the TTL is less than or equal to 0, the value will not expire.
 // If the loadValue function returns an error, the value will not be added to the cache.
+//
 // Single flight pattern is used to prevent multiple concurrent calls for the same key.
+// If executing goroutine panics, other goroutines will receive PanicError.
+// PanicError contains the original panic value and stack trace.
+// If executing goroutine calls runtime.Goexit, other goroutines will receive ErrGoexit.
 func (c *LRUCache[K, V]) GetOrLoadWithTTL(
 	key K, loadValue func(K) (value V, ttl time.Duration, err error),
 ) (value V, exists bool, err error) {
