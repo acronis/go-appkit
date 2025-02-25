@@ -9,6 +9,7 @@ The `lrucache` package provides an in-memory cache with an LRU (Least Recently U
 - **LRU Eviction Policy**: Automatically removes the least recently used items when the cache reaches its maximum size.
 - **Prometheus Metrics**: Collects and exposes metrics to monitor cache usage and performance.
 - **Expiration**: Supports setting TTL (Time To Live) for entries. Expired entries are removed during cleanup or when accessed.
+- **Cache Stampede Mitigation**: Prevents multiple goroutines from loading the same key concurrently by using a single flight pattern.
 
 ## Usage
 
@@ -62,7 +63,7 @@ func Example() {
 		fmt.Printf("User: %s, %s\n", user.UUID, user.Name)
 	}
 
-	// LRU cache for posts.
+	// LRU cache for posts. Posts are loaded from DB if not found in cache.
 	const post1UUID = "823e50c7-984d-4de3-8a09-92fa21d3cc3b"
 	const post2UUID = "24707009-ddf6-4e88-bd51-84ae236b7fda"
 	postsCache, err := lrucache.NewWithOpts[string, Post](1_000,
@@ -77,12 +78,26 @@ func Example() {
 	defer cleanupCancel()
 	go postsCache.RunPeriodicCleanup(cleanupCtx, 10*time.Minute) // Run cleanup every 10 minutes.
 
-	postsCache.Add(post1UUID, Post{post1UUID, "Lorem ipsum dolor sit amet..."})
-	if post, found := postsCache.Get(post1UUID); found {
-		fmt.Printf("Post: %s, %s\n", post.UUID, post.Text)
+	loadPostFromDatabase := func(id string) (value Post, err error) {
+		// Emulate loading post from DB.
+		if id == post1UUID {
+			return Post{id, "Lorem ipsum dolor sit amet..."}, nil
+		}
+		return Post{}, fmt.Errorf("not found")
 	}
-	if _, found := postsCache.Get(post2UUID); !found {
-		fmt.Printf("Post: %s is missing\n", post2UUID)
+
+	for _, postID := range []string{post1UUID, post1UUID, post2UUID} {
+		// Get post from cache or load it from DB. If two goroutines try to load the same post concurrently,
+		// only one of them will actually load the post, while the other will wait for the first one to finish.
+		if post, exists, loadErr := postsCache.GetOrLoad(postID, loadPostFromDatabase); loadErr != nil {
+			fmt.Printf("Failed to load post %s: %v\n", postID, loadErr)
+		} else {
+			if exists {
+				fmt.Printf("Post: %s, %s\n", post.UUID, post.Text)
+			} else {
+				fmt.Printf("Post (loaded from db): %s, %s\n", post.UUID, post.Text)
+			}
+		}
 	}
 
 	// The following Prometheus metrics will be exposed:
@@ -90,7 +105,7 @@ func Example() {
 	// my_app_cache_entries_amount{app_version="1.2.3",entry_type="user"} 2
 	// my_app_cache_hits_total{app_version="1.2.3",entry_type="note"} 1
 	// my_app_cache_hits_total{app_version="1.2.3",entry_type="user"} 2
-	// my_app_cache_misses_total{app_version="1.2.3",entry_type="note"} 1
+	// my_app_cache_misses_total{app_version="1.2.3",entry_type="note"} 2
 
 	fmt.Printf("Users: %d\n", usersCache.Len())
 	fmt.Printf("Posts: %d\n", postsCache.Len())
@@ -98,8 +113,9 @@ func Example() {
 	// Output:
 	// User: 966971df-a592-4e7e-a309-52501016fa44, Alice
 	// User: 848adf28-84c1-4259-97a2-acba7cf5c0b6, Bob
+	// Post (loaded from db): 823e50c7-984d-4de3-8a09-92fa21d3cc3b, Lorem ipsum dolor sit amet...
 	// Post: 823e50c7-984d-4de3-8a09-92fa21d3cc3b, Lorem ipsum dolor sit amet...
-	// Post: 24707009-ddf6-4e88-bd51-84ae236b7fda is missing
+	// Failed to load post 24707009-ddf6-4e88-bd51-84ae236b7fda: not found
 	// Users: 2
 	// Posts: 1
 }
