@@ -344,7 +344,7 @@ func TestLRUCache_PeriodicCleanup(t *testing.T) {
 	require.True(t, found)
 }
 
-func TestLRUCache_GetOrLoad(t *testing.T) {
+func TestLRUCache_GetOrLoad_GetOrLoadWithTTL(t *testing.T) {
 	t.Run("key exists", func(t *testing.T) {
 		metrics := NewPrometheusMetrics()
 		cache, err := New[string, int](10, metrics)
@@ -363,7 +363,6 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.True(t, exists)
 		require.Equal(t, 42, val)
 		require.Equal(t, 0, callCount)
-
 		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, HitsTotal: 1}, metrics)
 	})
 
@@ -423,6 +422,9 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 		require.ErrorIs(t, err, loadErr)
 		require.Equal(t, 2, callCount)
 		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 0, MissesTotal: 2}, metrics)
+
+		_, found := cache.Get("errorKey")
+		require.False(t, found)
 	})
 
 	t.Run("load value, single-flight", func(t *testing.T) {
@@ -439,27 +441,22 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 
 		const numGoroutines = 20
 		var wg sync.WaitGroup
-		results := make([]int, numGoroutines)
-		existsFlags := make([]bool, numGoroutines)
-		errs := make([]error, numGoroutines)
+		results := make([]getOrLoadResult[int], numGoroutines)
 
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				v, exists, err := cache.GetOrLoad("sf-key", loadFunc)
-				results[idx] = v
-				existsFlags[idx] = exists
-				errs[idx] = err
+				var r getOrLoadResult[int]
+				r.value, r.exists, r.err = cache.GetOrLoad("sf-key", loadFunc)
+				results[idx] = r
 			}(i)
 		}
 		wg.Wait()
 
 		// Ensure each goroutine received the expected result.
 		for i := 0; i < numGoroutines; i++ {
-			require.NoError(t, errs[i])
-			require.Equal(t, 999, results[i])
-			require.False(t, existsFlags[i])
+			require.Equal(t, getOrLoadResult[int]{value: 999}, results[i], "goroutine %d received unexpected result", i)
 		}
 		require.EqualValues(t, 1, callCount.Load())
 		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 1, MissesTotal: numGoroutines}, metrics)
@@ -475,31 +472,70 @@ func TestLRUCache_GetOrLoad(t *testing.T) {
 }
 
 func TestLRUCache_GetOrLoadWithTTL(t *testing.T) {
-	// Define a custom TTL shorter than the default TTL.
-	const customTTL = 100 * time.Millisecond
+	t.Run("custom TTL", func(t *testing.T) {
+		// Define a custom TTL shorter than the default TTL.
+		const customTTL = 100 * time.Millisecond
 
-	// Set a default TTL that is longer than the custom TTL to ensure the custom TTL is used.
-	cache, err := NewWithOpts[string, string](10, nil, Options{DefaultTTL: time.Second})
-	require.NoError(t, err)
+		// Set a default TTL that is longer than the custom TTL to ensure the custom TTL is used.
+		cache, err := NewWithOpts[string, string](10, nil, Options{DefaultTTL: time.Second})
+		require.NoError(t, err)
 
-	v, exists, err := cache.GetOrLoadWithTTL("ttl-key", func(key string) (string, time.Duration, error) {
-		return "ttl-value", customTTL, nil
+		v, exists, err := cache.GetOrLoadWithTTL("ttl-key", func(key string) (string, time.Duration, error) {
+			return "ttl-value", customTTL, nil
+		})
+		require.NoError(t, err)
+		require.False(t, exists)
+		require.Equal(t, "ttl-value", v)
+
+		// Immediately after loading, the value is in the cache.
+		v2, ok := cache.Get("ttl-key")
+		require.True(t, ok)
+		require.Equal(t, "ttl-value", v2)
+
+		// Wait longer than the custom TTL.
+		time.Sleep(2 * customTTL)
+
+		// The value should now be expired and thus not returned.
+		_, ok = cache.Get("ttl-key")
+		require.False(t, ok, "expected the value to be expired after the custom TTL")
 	})
-	require.NoError(t, err)
-	require.False(t, exists)
-	require.Equal(t, "ttl-value", v)
 
-	// Immediately after loading, the value is in the cache.
-	v2, ok := cache.Get("ttl-key")
-	require.True(t, ok)
-	require.Equal(t, "ttl-value", v2)
+	t.Run("custom TTL, error", func(t *testing.T) {
+		loadErr := errors.New("load error")
 
-	// Wait longer than the custom TTL.
-	time.Sleep(2 * customTTL)
+		metrics := NewPrometheusMetrics()
+		cache, err := New[string, int](10, metrics)
+		require.NoError(t, err)
 
-	// The value should now be expired and thus not returned.
-	_, ok = cache.Get("ttl-key")
-	require.False(t, ok, "expected the value to be expired after the custom TTL")
+		callCount := 0
+
+		// The first call returns an error.
+		_, _, err = cache.GetOrLoadWithTTL("errorKey", func(key string) (int, time.Duration, error) {
+			callCount++
+			return 73, time.Second, loadErr
+		})
+		require.ErrorIs(t, err, loadErr)
+		require.Equal(t, 1, callCount)
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 0, MissesTotal: 1}, metrics)
+
+		// The next call should try to load again.
+		_, _, err = cache.GetOrLoadWithTTL("errorKey", func(key string) (int, time.Duration, error) {
+			callCount++
+			return 73, time.Second, loadErr
+		})
+		require.ErrorIs(t, err, loadErr)
+		require.Equal(t, 2, callCount)
+		assertPrometheusMetrics(t, expectedMetrics{EntriesAmount: 0, MissesTotal: 2}, metrics)
+
+		_, found := cache.Get("errorKey")
+		require.False(t, found)
+	})
+}
+
+type getOrLoadResult[V any] struct {
+	value  V
+	exists bool
+	err    error
 }
 
 type User struct {
