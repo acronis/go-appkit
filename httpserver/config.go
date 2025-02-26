@@ -211,7 +211,7 @@ func (l *LimitsConfig) Set(dp config.DataProvider) error {
 		return err
 	}
 	if l.MaxRequests < 0 {
-		return dp.WrapKeyErr(cfgKeyServerLimitsMaxRequests, fmt.Errorf("maxRequests must be positive"))
+		return dp.WrapKeyErr(cfgKeyServerLimitsMaxRequests, fmt.Errorf("cannot be negative"))
 	}
 
 	if l.MaxBodySizeBytes, err = dp.GetSizeInBytes(cfgKeyServerLimitsMaxBodySize); err != nil {
@@ -283,10 +283,6 @@ func (s *TLSConfig) Set(dp config.DataProvider) error {
 		return err
 	}
 
-	if s.Enabled && (s.Certificate == "" || s.Key == "") {
-		return dp.WrapKeyErr(cfgKeyServerTLSKey, fmt.Errorf("both cert and key should be set"))
-	}
-
 	return nil
 }
 
@@ -299,9 +295,6 @@ func (c *Config) Set(dp config.DataProvider) error {
 	}
 	if c.UnixSocketPath, err = dp.GetString(cfgKeyServerUnixSocketPath); err != nil {
 		return err
-	}
-	if c.Address == "" && c.UnixSocketPath == "" {
-		return dp.WrapKeyErr(cfgKeyServerAddress, fmt.Errorf("either address or unixSocketPath should be set"))
 	}
 
 	err = c.TLS.Set(dp)

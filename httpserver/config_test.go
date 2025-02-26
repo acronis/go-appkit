@@ -217,16 +217,16 @@ func TestConfigValidationErrors(t *testing.T) {
 			name: "error, invalid address",
 			yamlData: `
 server:
-  address: ""
+  address: []
 `,
-			expectedErrMsg: `server.address: either address or unixSocketPath should be set`,
+			expectedErrMsg: `server.address: unable to cast`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := NewConfig()
 			err := config.NewLoader(config.NewViperAdapter()).LoadFromReader(bytes.NewBuffer([]byte(tt.yamlData)), config.DataTypeYAML, cfg)
-			require.EqualError(t, err, tt.expectedErrMsg)
+			require.ErrorContains(t, err, tt.expectedErrMsg)
 		})
 	}
 }
