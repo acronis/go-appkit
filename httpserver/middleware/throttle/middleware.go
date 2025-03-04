@@ -58,9 +58,9 @@ type MiddlewareOpts struct {
 	BuildHandlerAtInit bool
 }
 
-// rateLimitOpts returns options for constructing rate limiting middleware.
-func (opts MiddlewareOpts) rateLimitOpts() rateLimitMiddlewareOpts {
-	return rateLimitMiddlewareOpts{
+// RateLimitOpts returns options for constructing rate limiting middleware.
+func (opts MiddlewareOpts) RateLimitOpts() RateLimitMiddlewareOpts {
+	return RateLimitMiddlewareOpts{
 		GetKeyIdentity:            opts.GetKeyIdentity,
 		RateLimitOnReject:         opts.RateLimitOnReject,
 		RateLimitOnRejectInDryRun: opts.RateLimitOnRejectInDryRun,
@@ -68,9 +68,9 @@ func (opts MiddlewareOpts) rateLimitOpts() rateLimitMiddlewareOpts {
 	}
 }
 
-// inFlightLimitOpts returns options for constructing in-flight limiting middleware.
-func (opts MiddlewareOpts) inFlightLimitOpts() inFlightLimitMiddlewareOpts {
-	return inFlightLimitMiddlewareOpts{
+// InFlightLimitOpts returns options for constructing in-flight limiting middleware.
+func (opts MiddlewareOpts) InFlightLimitOpts() InFlightLimitMiddlewareOpts {
+	return InFlightLimitMiddlewareOpts{
 		GetKeyIdentity:                opts.GetKeyIdentity,
 		InFlightLimitOnReject:         opts.InFlightLimitOnReject,
 		InFlightLimitOnRejectInDryRun: opts.InFlightLimitOnRejectInDryRun,
@@ -164,8 +164,8 @@ func makeRoutes(
 				return nil, fmt.Errorf("in-flight zone %q is not defined", zoneName)
 			}
 			var inFlightLimitMw func(next http.Handler) http.Handler
-			inFlightLimitMw, err = makeInFlightLimitMiddleware(
-				&cfgZone, errDomain, rule.Name(), mc, opts.inFlightLimitOpts())
+			inFlightLimitMw, err = InFlightLimitMiddlewareWithOpts(
+				&cfgZone, errDomain, rule.Name(), mc, opts.InFlightLimitOpts())
 			if err != nil {
 				return nil, fmt.Errorf("make in-flight limit middleware for zone %q: %w", zoneName, err)
 			}
@@ -180,8 +180,8 @@ func makeRoutes(
 				return nil, fmt.Errorf("rate limit zone %q is not defined", zoneName)
 			}
 			var rateLimitMw func(next http.Handler) http.Handler
-			rateLimitMw, err = makeRateLimitMiddleware(
-				&cfgZone, errDomain, rule.Name(), mc, opts.rateLimitOpts())
+			rateLimitMw, err = RateLimitMiddlewareWithOpts(
+				&cfgZone, errDomain, rule.Name(), mc, opts.RateLimitOpts())
 			if err != nil {
 				return nil, fmt.Errorf("make rate limit middleware for zone %q: %w", zoneName, err)
 			}
@@ -199,8 +199,8 @@ func makeRoutes(
 	return routes, nil
 }
 
-// rateLimitMiddlewareOpts represents an options for RateLimitMiddleware.
-type rateLimitMiddlewareOpts struct {
+// RateLimitMiddlewareOpts represents an options for RateLimitMiddleware.
+type RateLimitMiddlewareOpts struct {
 	// GetKeyIdentity is a function that returns identity string representation.
 	// The returned string is used as a key for zone when key.type is "identity".
 	GetKeyIdentity func(r *http.Request) (key string, bypass bool, err error)
@@ -216,12 +216,16 @@ type rateLimitMiddlewareOpts struct {
 	RateLimitOnError middleware.RateLimitOnErrorFunc
 }
 
-func makeRateLimitMiddleware(
-	cfg *RateLimitZoneConfig,
-	errDomain string,
-	ruleName string,
-	mc MetricsCollector,
-	opts rateLimitMiddlewareOpts,
+// RateLimitMiddleware is a middleware that performs rate limiting based on the passed configuration.
+func RateLimitMiddleware(
+	cfg *RateLimitZoneConfig, errDomain string, ruleName string, mc MetricsCollector,
+) (func(next http.Handler) http.Handler, error) {
+	return RateLimitMiddlewareWithOpts(cfg, errDomain, ruleName, mc, RateLimitMiddlewareOpts{})
+}
+
+// RateLimitMiddlewareWithOpts is a more configurable version of RateLimitMiddleware.
+func RateLimitMiddlewareWithOpts(
+	cfg *RateLimitZoneConfig, errDomain string, ruleName string, mc MetricsCollector, opts RateLimitMiddlewareOpts,
 ) (func(next http.Handler) http.Handler, error) {
 	var alg middleware.RateLimitAlg
 	switch cfg.Alg {
@@ -299,7 +303,7 @@ func makeRateLimitMiddleware(
 	})
 }
 
-type inFlightLimitMiddlewareOpts struct {
+type InFlightLimitMiddlewareOpts struct {
 	// GetKeyIdentity is a function that returns identity string representation.
 	// The returned string is used as a key for zone when key.type is "identity".
 	GetKeyIdentity func(r *http.Request) (key string, bypass bool, err error)
@@ -315,12 +319,16 @@ type inFlightLimitMiddlewareOpts struct {
 	InFlightLimitOnError middleware.InFlightLimitOnErrorFunc
 }
 
-func makeInFlightLimitMiddleware(
-	cfg *InFlightLimitZoneConfig,
-	errDomain string,
-	ruleName string,
-	mc MetricsCollector,
-	opts inFlightLimitMiddlewareOpts,
+// InFlightLimitMiddleware is a middleware that performs in-flight limiting based on the passed configuration.
+func InFlightLimitMiddleware(
+	cfg *InFlightLimitZoneConfig, errDomain string, ruleName string, mc MetricsCollector,
+) (func(next http.Handler) http.Handler, error) {
+	return InFlightLimitMiddlewareWithOpts(cfg, errDomain, ruleName, mc, InFlightLimitMiddlewareOpts{})
+}
+
+// InFlightLimitMiddlewareWithOpts is a more configurable version of InFlightLimitMiddleware.
+func InFlightLimitMiddlewareWithOpts(
+	cfg *InFlightLimitZoneConfig, errDomain string, ruleName string, mc MetricsCollector, opts InFlightLimitMiddlewareOpts,
 ) (func(next http.Handler) http.Handler, error) {
 	if cfg.Key.Type == ZoneKeyTypeIdentity && opts.GetKeyIdentity == nil {
 		return nil, fmt.Errorf("GetKeyIdentity is required for identity key type")
