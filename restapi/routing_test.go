@@ -343,72 +343,249 @@ func mustParseRoutePath(s string) RoutePath {
 	return rp
 }
 
-func TestMethodsList_UnmarshalText(t *testing.T) {
+func TestMethodsList_UnmarshalText_MarshalText(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected MethodsList
+		input             string
+		unmarshalExpected MethodsList
+		marshalExpected   string
 	}{
-		{input: "GET,POST", expected: MethodsList{"GET", "POST"}},
-		{input: "PUT, DELETE", expected: MethodsList{"PUT", "DELETE"}},
-		{input: "", expected: MethodsList{}},
+		{input: "GET,POST", unmarshalExpected: MethodsList{"GET", "POST"}, marshalExpected: "GET,POST"},
+		{input: "PUT, DELETE", unmarshalExpected: MethodsList{"PUT", "DELETE"}, marshalExpected: "PUT,DELETE"},
+		{input: "", unmarshalExpected: MethodsList{}, marshalExpected: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			var ml MethodsList
+
 			err := ml.UnmarshalText([]byte(tt.input))
 			require.NoError(t, err)
-			require.Equal(t, tt.expected, ml)
+			require.Equal(t, tt.unmarshalExpected, ml)
+
+			b, err := ml.MarshalText()
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
 		})
 	}
 }
 
-func TestMethodsList_UnmarshalJSON(t *testing.T) {
+func TestMethodsList_UnmarshalJSON_MarshalJSON(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected MethodsList
-		wantErr  bool
+		input             string
+		unmarshalExpected MethodsList
+		unmarshalErr      bool
+		marshalExpected   string
 	}{
-		{input: `"GET,POST"`, expected: MethodsList{"GET", "POST"}, wantErr: false},
-		{input: `["PUT", "DELETE"]`, expected: MethodsList{"PUT", "DELETE"}, wantErr: false},
-		{input: `""`, expected: MethodsList{}, wantErr: false},
-		{input: `123`, expected: nil, wantErr: true},
+		{input: `"GET, POST"`, unmarshalExpected: MethodsList{"GET", "POST"}, marshalExpected: `"GET,POST"`},
+		{input: `["PUT", "DELETE"]`, unmarshalExpected: MethodsList{"PUT", "DELETE"}, marshalExpected: `"PUT,DELETE"`},
+		{input: `""`, unmarshalExpected: MethodsList{}, marshalExpected: `""`},
+		{input: `123`, unmarshalExpected: nil, unmarshalErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			var ml MethodsList
+
 			err := ml.UnmarshalJSON([]byte(tt.input))
-			if tt.wantErr {
+			if tt.unmarshalErr {
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expected, ml)
+				return
 			}
+			require.NoError(t, err)
+			require.Equal(t, tt.unmarshalExpected, ml)
+
+			b, err := ml.MarshalJSON()
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
 		})
 	}
 }
 
-func TestMethodsList_UnmarshalYAML(t *testing.T) {
+func TestMethodsList_UnmarshalYAML_MarshalYAML(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected MethodsList
-		wantErr  bool
+		input             string
+		unmarshalExpected MethodsList
+		unmarshalErr      bool
+		marshalExpected   string
 	}{
-		{input: `"GET,POST"`, expected: MethodsList{"GET", "POST"}, wantErr: false},
-		{input: `["PUT", "DELETE"]`, expected: MethodsList{"PUT", "DELETE"}, wantErr: false},
-		{input: `""`, expected: MethodsList{}, wantErr: false},
-		{input: `[123`, expected: nil, wantErr: true},
+		{input: `"GET, POST"`, unmarshalExpected: MethodsList{"GET", "POST"}, marshalExpected: "GET,POST\n"},
+		{input: `["PUT", "DELETE"]`, unmarshalExpected: MethodsList{"PUT", "DELETE"}, marshalExpected: "PUT,DELETE\n"},
+		{input: `""`, unmarshalExpected: MethodsList{}, marshalExpected: "\"\"\n"},
+		{input: `[123`, unmarshalExpected: nil, unmarshalErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			var ml MethodsList
+
 			err := yaml.Unmarshal([]byte(tt.input), &ml)
-			if tt.wantErr {
+			if tt.unmarshalErr {
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expected, ml)
+				return
 			}
+			require.NoError(t, err)
+			require.Equal(t, tt.unmarshalExpected, ml)
+
+			b, err := yaml.Marshal(ml)
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
+		})
+	}
+}
+
+func TestRoutePath_UnmarshalText_MarshalText(t *testing.T) {
+	tests := []struct {
+		input             string
+		unmarshalExpected RoutePath
+		marshalExpected   string
+		unmarshalErr      bool
+	}{
+		{
+			input:             "=",
+			unmarshalExpected: RoutePath{},
+			unmarshalErr:      true,
+		},
+		{
+			input:             "= /exact",
+			unmarshalExpected: RoutePath{Raw: "= /exact", NormalizedPath: "/exact", ExactMatch: true},
+			marshalExpected:   "= /exact",
+		},
+		{
+			input:             "^~ /forward",
+			unmarshalExpected: RoutePath{Raw: "^~ /forward", NormalizedPath: "/forward", ForwardMatch: true},
+			marshalExpected:   "^~ /forward",
+		},
+		{
+			input:             "~ /regexp",
+			unmarshalExpected: RoutePath{Raw: "~ /regexp", RegExpPath: regexp.MustCompile("/regexp")},
+			marshalExpected:   "~ /regexp",
+		},
+		{
+			input:             "/prefixed",
+			unmarshalExpected: RoutePath{Raw: "/prefixed", NormalizedPath: "/prefixed"},
+			marshalExpected:   "/prefixed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var rp RoutePath
+
+			err := rp.UnmarshalText([]byte(tt.input))
+			if tt.unmarshalErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.unmarshalExpected, rp)
+
+			b, err := rp.MarshalText()
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
+		})
+	}
+}
+
+func TestRoutePath_UnmarshalJSON_MarshalJSON(t *testing.T) {
+	tests := []struct {
+		input             string
+		unmarshalExpected RoutePath
+		unmarshalErr      bool
+		marshalExpected   string
+	}{
+		{
+			input:             `"= /exact"`,
+			unmarshalExpected: RoutePath{Raw: "= /exact", NormalizedPath: "/exact", ExactMatch: true},
+			marshalExpected:   `"` + "= /exact" + `"`,
+		},
+		{
+			input:             `"^~ /forward"`,
+			unmarshalExpected: RoutePath{Raw: "^~ /forward", NormalizedPath: "/forward", ForwardMatch: true},
+			marshalExpected:   `"` + "^~ /forward" + `"`,
+		},
+		{
+			input:             `"~ /regexp"`,
+			unmarshalExpected: RoutePath{Raw: "~ /regexp", RegExpPath: regexp.MustCompile("/regexp")},
+			marshalExpected:   `"` + "~ /regexp" + `"`,
+		},
+		{
+			input:             `"/prefixed"`,
+			unmarshalExpected: RoutePath{Raw: "/prefixed", NormalizedPath: "/prefixed"},
+			marshalExpected:   `"/prefixed"`,
+		},
+		{
+			input:             `123`,
+			unmarshalExpected: RoutePath{},
+			unmarshalErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var rp RoutePath
+
+			err := rp.UnmarshalJSON([]byte(tt.input))
+			if tt.unmarshalErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.unmarshalExpected, rp)
+
+			b, err := rp.MarshalJSON()
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
+		})
+	}
+}
+
+func TestRoutePath_UnmarshalYAML_MarshalYAML(t *testing.T) {
+	tests := []struct {
+		input             string
+		unmarshalExpected RoutePath
+		unmarshalErr      bool
+		marshalExpected   string
+	}{
+		{
+			input:             `"= /exact"`,
+			unmarshalExpected: RoutePath{Raw: "= /exact", NormalizedPath: "/exact", ExactMatch: true},
+			marshalExpected:   "= /exact\n",
+		},
+		{
+			input:             `"^~ /forward"`,
+			unmarshalExpected: RoutePath{Raw: "^~ /forward", NormalizedPath: "/forward", ForwardMatch: true},
+			marshalExpected:   "^~ /forward\n",
+		},
+		{
+			input:             `"~ /regexp"`,
+			unmarshalExpected: RoutePath{Raw: "~ /regexp", RegExpPath: regexp.MustCompile("/regexp")},
+			marshalExpected:   "~ /regexp\n",
+		},
+		{
+			input:             `"/prefixed"`,
+			unmarshalExpected: RoutePath{Raw: "/prefixed", NormalizedPath: "/prefixed"},
+			marshalExpected:   "/prefixed\n",
+		},
+		{
+			input:             `[123`,
+			unmarshalExpected: RoutePath{},
+			unmarshalErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			var rp RoutePath
+
+			err := yaml.Unmarshal([]byte(tt.input), &rp)
+			if tt.unmarshalErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.unmarshalExpected, rp)
+
+			b, err := yaml.Marshal(rp)
+			require.NoError(t, err)
+			require.Equal(t, tt.marshalExpected, string(b))
 		})
 	}
 }
