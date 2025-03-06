@@ -399,6 +399,21 @@ func (ra *RateLimitRetryAfterValue) unmarshal(retryAfterVal string) error {
 	return nil
 }
 
+// MarshalText implements the encoding.TextMarshaler interface.
+func (ra RateLimitRetryAfterValue) MarshalText() ([]byte, error) {
+	return []byte(ra.String()), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (ra RateLimitRetryAfterValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ra.String())
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (ra RateLimitRetryAfterValue) MarshalYAML() (interface{}, error) {
+	return ra.String(), nil
+}
+
 // RateLimitValue represents value for rate limiting.
 type RateLimitValue struct {
 	Count    int
@@ -408,7 +423,21 @@ type RateLimitValue struct {
 // String returns a string representation of the rate limit value.
 // Implements fmt.Stringer interface.
 func (rl RateLimitValue) String() string {
-	return fmt.Sprintf("%d/%s", rl.Count, rl.Duration)
+	if rl.Duration == 0 && rl.Count == 0 {
+		return ""
+	}
+	var d string
+	switch rl.Duration {
+	case time.Second:
+		d = "s"
+	case time.Minute:
+		d = "m"
+	case time.Hour:
+		d = "h"
+	default:
+		d = rl.Duration.String()
+	}
+	return fmt.Sprintf("%d/%s", rl.Count, d)
 }
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface.
@@ -438,6 +467,10 @@ func (rl *RateLimitValue) UnmarshalYAML(value *yaml.Node) error {
 }
 
 func (rl *RateLimitValue) unmarshal(rate string) error {
+	if rate == "" {
+		*rl = RateLimitValue{}
+		return nil
+	}
 	incorrectFormatErr := fmt.Errorf(
 		"incorrect format for rate %q, should be N/(s|m|h), for example 10/s, 100/m, 1000/h", rate)
 	parts := strings.SplitN(rate, "/", 2)
@@ -461,6 +494,21 @@ func (rl *RateLimitValue) unmarshal(rate string) error {
 	}
 	*rl = RateLimitValue{Count: count, Duration: dur}
 	return nil
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (rl RateLimitValue) MarshalText() ([]byte, error) {
+	return []byte(rl.String()), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (rl RateLimitValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal(rl.String())
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (rl RateLimitValue) MarshalYAML() (interface{}, error) {
+	return rl.String(), nil
 }
 
 // TagsList represents a list of tags.
@@ -512,6 +560,25 @@ func (tl *TagsList) unmarshal(data string) {
 	for _, m := range methods {
 		*tl = append(*tl, strings.TrimSpace(m))
 	}
+}
+
+func (tl TagsList) String() string {
+	return strings.Join(tl, ",")
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (tl TagsList) MarshalText() ([]byte, error) {
+	return []byte(tl.String()), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (tl TagsList) MarshalJSON() ([]byte, error) {
+	return json.Marshal(tl.String())
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (tl TagsList) MarshalYAML() (interface{}, error) {
+	return tl.String(), nil
 }
 
 func mapstructureTrimSpaceStringsHookFunc() mapstructure.DecodeHookFunc {

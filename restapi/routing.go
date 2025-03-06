@@ -102,6 +102,26 @@ func (rp *RoutePath) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// String returns string representation of the route's path.
+func (rp RoutePath) String() string {
+	return rp.Raw
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (rp RoutePath) MarshalText() ([]byte, error) {
+	return []byte(rp.Raw), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (rp RoutePath) MarshalJSON() ([]byte, error) {
+	return json.Marshal(rp.Raw)
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (rp RoutePath) MarshalYAML() (interface{}, error) {
+	return rp.Raw, nil
+}
+
 // Route represents route for handling.
 type Route struct {
 	Path        RoutePath
@@ -355,4 +375,24 @@ func (ml *MethodsList) unmarshal(data string) {
 	for _, m := range methods {
 		*ml = append(*ml, strings.TrimSpace(m))
 	}
+}
+
+// String returns string representation of the list of methods.
+func (ml MethodsList) String() string {
+	return strings.Join(ml, ",")
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (ml MethodsList) MarshalText() ([]byte, error) {
+	return []byte(ml.String()), nil
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (ml MethodsList) MarshalJSON() ([]byte, error) {
+	return json.Marshal(ml.String())
+}
+
+// MarshalYAML implements the yaml.Marshaler interface.
+func (ml MethodsList) MarshalYAML() (interface{}, error) {
+	return ml.String(), nil
 }
