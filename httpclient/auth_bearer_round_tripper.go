@@ -32,6 +32,13 @@ type AuthProvider interface {
 	GetToken(ctx context.Context, scope ...string) (string, error)
 }
 
+// AuthProviderFunc allows to define get token logic in functional way.
+type AuthProviderFunc func(ctx context.Context, scope ...string) (string, error)
+
+func (f AuthProviderFunc) GetToken(ctx context.Context, scope ...string) (string, error) {
+	return f(ctx, scope...)
+}
+
 // AuthBearerRoundTripperOpts is options for AuthBearerRoundTripper.
 type AuthBearerRoundTripperOpts struct {
 	TokenScope []string

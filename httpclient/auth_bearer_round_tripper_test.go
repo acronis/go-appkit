@@ -54,8 +54,10 @@ func TestAuthBearerRoundTripper_RoundTrip(t *testing.T) {
 
 	// error
 	authProviderError := errors.New("auth provider error")
-	authProfider = &testAuthProfider{err: authProviderError}
-	rt = NewAuthBearerRoundTripper(http.DefaultTransport, authProfider)
+	failingAuthProvider := AuthProviderFunc(func(ctx context.Context, scope ...string) (string, error) {
+		return "", authProviderError
+	})
+	rt = NewAuthBearerRoundTripper(http.DefaultTransport, failingAuthProvider)
 	client = http.Client{Transport: rt}
 	resp, err = client.Do(req)
 	if resp != nil {
