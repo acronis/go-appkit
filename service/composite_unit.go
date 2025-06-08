@@ -22,32 +22,34 @@ func NewCompositeUnit(units ...Unit) *CompositeUnit {
 	return &CompositeUnit{units}
 }
 
-// Start starts all units in the composition (each in its own separate goroutine) and blocks.
-// If fatal error occurs in any unit, it tries to stop (not gracefully) other ones
-// and sends CompositeUnitError (may contain errors caused by stopping too) to passed channel.
+// Start launches all units in the composition concurrently, each in its own goroutine, by calling their Start methods.
+// It blocks until all Start method invocations return.
+//
+// If any unit writes to the provided error channel upon returning, the method attempts to stop all other units
+// (non-gracefully) by calling their Stop methods. A CompositeUnitError - potentially including errors from the stop
+// operations — is then sent to the provided channel.
 func (cu *CompositeUnit) Start(fatalError chan<- error) {
 	fatalErrs := make([]chan error, len(cu.Units))
 	for i := 0; i < len(fatalErrs); i++ {
 		fatalErrs[i] = make(chan error, 1)
 	}
 
-	done := make(chan bool, len(cu.Units))
-	runningUnits := int32(len(cu.Units))
+	ok := make(chan bool, len(cu.Units))
+	runningOrFailedUnits := int32(len(cu.Units))
 	for i := 0; i < len(cu.Units); i++ {
 		go func(i int) {
 			cu.Units[i].Start(fatalErrs[i])
-			atomic.AddInt32(&runningUnits, -1)
 			if len(fatalErrs[i]) != 0 {
-				done <- false
+				ok <- false
 				return
 			}
-			if atomic.LoadInt32(&runningUnits) == 0 {
-				done <- true
+			if atomic.AddInt32(&runningOrFailedUnits, -1) == 0 {
+				ok <- true
 			}
 		}(i)
 	}
 
-	if <-done {
+	if <-ok {
 		return
 	}
 
