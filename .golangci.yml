@@ -77,6 +77,7 @@ issues:
       linters:
         - dogsled
         - dupl
+        - errcheck
         - funlen
         - goconst
         - gocritic
