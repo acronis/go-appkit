@@ -157,7 +157,7 @@ func TestHTTPServer_StartWithDynamicPort(t *testing.T) {
 }
 
 func TestHTTPServer_Start_UnixSocket(t *testing.T) {
-	testHTTPServerStart(t, "", 0, t.TempDir()+"/s.sock")
+	testHTTPServerStart(t, "", 0, filepath.Join(t.TempDir(), "s.sock"))
 }
 
 func testHTTPServerStart(t *testing.T, host string, port int, unixSocketPath string) {
