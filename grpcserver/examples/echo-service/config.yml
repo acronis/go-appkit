@@ -1,0 +1,19 @@
+grpcServer:
+  address: ":50051"
+  timeouts:
+    shutdown: 5s
+  keepalive:
+    time: 2m
+    timeout: 20s
+  limits:
+    maxRecvMessageSize: 4M
+    maxSendMessageSize: 4M
+  log:
+    callStart: false
+    slowCallThreshold: 1s
+metricsServer:
+  address: ":9090"
+log:
+  level: info
+  format: json
+  output: stdout

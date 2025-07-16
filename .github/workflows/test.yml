@@ -37,6 +37,10 @@ jobs:
       - name: Run tests with coverage
         run: go test -race -cover -coverprofile="coverage.out" -covermode=atomic -v ./...
 
+      - name: Exclude generated code and examples from coverage
+        if: matrix.os == 'ubuntu-latest'
+        run: grep -Ev '/pb/|/examples/' ./coverage.out > ./coverage_filtered.out && mv -f ./coverage_filtered.out ./coverage.out
+
       - name: Check coverage
         if: matrix.os == 'ubuntu-latest'
         run: |
