@@ -66,7 +66,7 @@ func (h *recoveryHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 			if logger != nil {
 				var logFields []log.Field
-				if h.opts.StackSize != 0 {
+				if h.opts.StackSize > 0 {
 					stack := make([]byte, h.opts.StackSize)
 					stack = stack[:runtime.Stack(stack, false)]
 					logFields = append(logFields, log.Bytes("stack", stack))

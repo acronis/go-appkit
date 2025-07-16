@@ -89,7 +89,7 @@ type HTTPServer struct {
 	ShutdownTimeout time.Duration
 
 	port                     int32
-	httpServerDone           chan struct{}
+	httpServerDone           atomic.Value
 	httpReqPrometheusMetrics *middleware.HTTPRequestPrometheusMetrics
 }
 
@@ -157,8 +157,9 @@ func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *
 // It's supposed that this method will be called in a separate goroutine.
 // If a fatal error occurs, it will be sent to the fatalError channel.
 func (s *HTTPServer) Start(fatalError chan<- error) {
-	s.httpServerDone = make(chan struct{})
-	defer close(s.httpServerDone)
+	done := make(chan struct{})
+	defer close(done)
+	s.httpServerDone.Store(done)
 
 	logger := s.Logger.With(
 		log.String("address", s.HTTPServer.Addr),
@@ -231,8 +232,8 @@ func (s *HTTPServer) Stop(gracefully bool) error {
 			s.Logger.Error("application HTTP server closing error", log.Error(err))
 			return err
 		}
-		if s.httpServerDone != nil {
-			<-s.httpServerDone // Wait for the listener to be closed.
+		if done, ok := s.httpServerDone.Load().(chan struct{}); ok && done != nil {
+			<-done // Wait for the listener to be closed.
 		}
 		return nil
 	}
@@ -247,8 +248,8 @@ func (s *HTTPServer) Stop(gracefully bool) error {
 	}
 	s.Logger.Info("application HTTP server shut down")
 
-	if s.httpServerDone != nil {
-		<-s.httpServerDone // Wait for the listener to be closed.
+	if done, ok := s.httpServerDone.Load().(chan struct{}); ok && done != nil {
+		<-done // Wait for the listener to be closed.
 	}
 
 	return nil
