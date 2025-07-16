@@ -86,6 +86,9 @@ var Bool = logf.Bool
 // Time returns a new Field with the given key and time.Time.
 var Time = logf.Time
 
+// Object returns a new Field with the given key and value of any type.
+var Object = logf.Object
+
 // Any returns a new Filed with the given key and value of any type. Is tries
 // to choose the best way to represent key-value pair as a Field.
 var Any = logf.Any
