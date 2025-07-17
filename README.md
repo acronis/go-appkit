@@ -5,6 +5,7 @@
 The project includes the following packages:
 
 + [config](./config) - loading configuration from environment variables, files, and `io.Reader`. YAML and JSON formats are supported out of the box.
++ [grpcserver/interceptor](./grpcserver/interceptor) - collection of gRPC interceptors for logging, metrics collection, panic recovery, request-id tracing, etc.
 + [httpclient](./httpclient) - helpers and a set of `http.RoundTripper` implementations for simplifying typical HTTP client operations (e.g. retries, client-side throttling, setting any header for each request, etc.).
 + [httpserver](./httpserver) - configurable HTTP server (wrapper around `http.Server`) that includes graceful shutdown support, panic recovery, metrics collection, and logging.
 + [httpserver/middleware](./httpserver/middleware) - collection of middlewares for HTTP server (e.g. request logging, metrics collection, panic recovery, in-flight request limiting, rate limiting, request-id tracing, etc.).
