@@ -330,25 +330,26 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_ExcludedMetho
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests() {
 	const headerRequestID = "test-request-id"
 
-	var threshold time.Duration
-	if s.IsUnary {
-		threshold = 10 * time.Millisecond
-	} else {
-		threshold = 1 * time.Nanosecond // Very low threshold for stream to trigger slow request
-	}
-
 	logger := logtest.NewRecorder()
 	svc, client, closeSvc, err := s.setupTestService(logger, "", []LoggingOption{
-		WithLoggingSlowCallThreshold(threshold),
+		WithLoggingSlowCallThreshold(10 * time.Millisecond),
 	})
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
 	// Set up a slow handler
-	svc.SwitchUnaryCallHandler(func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
-		time.Sleep(50 * time.Millisecond) // Simulate slow processing
-		return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
-	})
+	svc.SwitchUnaryCallHandler(
+		func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
+			time.Sleep(50 * time.Millisecond) // Simulate slow processing
+			return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
+		})
+	svc.SwitchStreamingOutputCallHandler(
+		func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
+			time.Sleep(50 * time.Millisecond) // Simulate slow processing
+			return stream.Send(&grpc_testing.StreamingOutputCallResponse{
+				Payload: &grpc_testing.Payload{Body: []byte("test")},
+			})
+		})
 
 	reqCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(headerRequestIDKey, headerRequestID))
 
@@ -379,31 +380,104 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests(
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams() {
 	const headerRequestID = "test-request-id"
 
-	logger := logtest.NewRecorder()
-	_, client, closeSvc, err := s.setupTestService(logger, "", nil)
-	s.Require().NoError(err)
-	defer func() { s.Require().NoError(closeSvc()) }()
-
-	// We need to test this separately as it requires custom interceptor setup
-	// This is testing a feature that works with both unary and stream interceptors
-	if s.IsUnary {
-		reqCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(headerRequestIDKey, headerRequestID))
-		_, err = client.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
-		s.Require().NoError(err)
-	} else {
-		reqCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(headerRequestIDKey, headerRequestID))
-		stream, streamErr := client.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
-		s.Require().NoError(streamErr)
-		_, recvErr := stream.Recv()
-		s.Require().NoError(recvErr)
+	tests := []struct {
+		name              string
+		setupParams       func(*LoggingParams)
+		expectedFields    map[string]string
+		expectedIntFields map[string]int
+		expectedTimeSlot  string
+		expectedLogCount  int
+	}{
+		{
+			name: "LoggingParams with extended fields",
+			setupParams: func(params *LoggingParams) {
+				params.ExtendFields(
+					log.String("custom_field", "custom_value"),
+					log.Int("number_field", 42),
+				)
+			},
+			expectedFields: map[string]string{
+				"custom_field": "custom_value",
+			},
+			expectedIntFields: map[string]int{
+				"number_field": 42,
+			},
+			expectedLogCount: 1,
+		},
+		{
+			name: "LoggingParams with time slots",
+			setupParams: func(params *LoggingParams) {
+				time.Sleep(50 * time.Millisecond) // Simulate some processing time
+				params.AddTimeSlotInt("db_query", 150)
+				params.AddTimeSlotDurationInMs("processing", 75*time.Millisecond)
+			},
+			expectedTimeSlot: "time_slots",
+			expectedLogCount: 1,
+		},
+		{
+			name: "LoggingParams with both fields and time slots",
+			setupParams: func(params *LoggingParams) {
+				time.Sleep(50 * time.Millisecond) // Simulate some processing time
+				params.ExtendFields(log.String("operation", "test_op"))
+				params.AddTimeSlotInt("cache_lookup", 25)
+			},
+			expectedFields: map[string]string{
+				"operation": "test_op",
+			},
+			expectedTimeSlot: "time_slots",
+			expectedLogCount: 1,
+		},
 	}
 
-	s.Require().Equal(1, len(logger.Entries()))
-	logEntry := logger.Entries()[0]
-	s.Require().Contains(logEntry.Text, "gRPC call finished")
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			logger := logtest.NewRecorder()
 
-	// Note: This test would need a custom setup to properly test LoggingParams
-	// For now, we'll just ensure basic logging works
+			// Setup test service with custom handler that modifies logging params
+			var options []LoggingOption
+			if tt.expectedTimeSlot != "" {
+				// Use very low threshold to ensure time_slots are logged
+				options = []LoggingOption{WithLoggingSlowCallThreshold(10 * time.Millisecond)}
+			}
+			_, client, closeSvc, err := s.setupTestServiceWithLoggingParamsHandlerAndOptions(logger, tt.setupParams, options)
+			s.Require().NoError(err)
+			defer func() { s.Require().NoError(closeSvc()) }()
+
+			reqCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(headerRequestIDKey, headerRequestID))
+
+			if s.IsUnary {
+				_, err = client.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+				s.Require().NoError(err)
+			} else {
+				stream, streamErr := client.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+				s.Require().NoError(streamErr)
+				_, recvErr := stream.Recv()
+				s.Require().NoError(recvErr)
+			}
+
+			s.Require().Equal(tt.expectedLogCount, len(logger.Entries()))
+			if len(logger.Entries()) > 0 {
+				logEntry := logger.Entries()[0]
+				s.Require().Contains(logEntry.Text, "gRPC call finished")
+
+				// Check expected fields
+				for fieldName, expectedValue := range tt.expectedFields {
+					s.requireLogFieldString(logEntry, fieldName, expectedValue)
+				}
+
+				// Check expected int fields
+				for fieldName, expectedValue := range tt.expectedIntFields {
+					s.requireLogFieldInt(logEntry, fieldName, expectedValue)
+				}
+
+				// Check time slots if expected
+				if tt.expectedTimeSlot != "" {
+					_, found := logEntry.FindField(tt.expectedTimeSlot)
+					s.Require().True(found, "Expected time_slots field to be present")
+				}
+			}
+		})
+	}
 }
 
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_RemoteAddressParsing() {
@@ -576,6 +650,42 @@ func (s *LoggingInterceptorTestSuite) setupTestService(logger *logtest.Recorder,
 	}
 
 	return startTestService(serverOptions, dialOptions)
+}
+
+func (s *LoggingInterceptorTestSuite) setupTestServiceWithLoggingParamsHandler(logger *logtest.Recorder, setupParams func(*LoggingParams)) (*testService, grpc_testing.TestServiceClient, func() error, error) {
+	return s.setupTestServiceWithLoggingParamsHandlerAndOptions(logger, setupParams, nil)
+}
+
+func (s *LoggingInterceptorTestSuite) setupTestServiceWithLoggingParamsHandlerAndOptions(
+	logger *logtest.Recorder, setupParams func(*LoggingParams), options []LoggingOption,
+) (*testService, grpc_testing.TestServiceClient, func() error, error) {
+	svc, client, closeSvc, err := s.setupTestService(logger, "", options)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Modify the service handlers to use LoggingParams
+	if s.IsUnary {
+		svc.SwitchUnaryCallHandler(func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
+			// Get the LoggingParams that the logging interceptor put in the context
+			if params := GetLoggingParamsFromContext(ctx); params != nil {
+				setupParams(params)
+			}
+			return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
+		})
+	} else {
+		svc.SwitchStreamingOutputCallHandler(func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
+			// Get the LoggingParams that the logging interceptor put in the context
+			if params := GetLoggingParamsFromContext(stream.Context()); params != nil {
+				setupParams(params)
+			}
+			return stream.Send(&grpc_testing.StreamingOutputCallResponse{
+				Payload: &grpc_testing.Payload{Body: []byte("test")},
+			})
+		})
+	}
+
+	return svc, client, closeSvc, nil
 }
 
 func (s *LoggingInterceptorTestSuite) requireCommonFields(logEntry logtest.RecordedEntry, headerRequestID, headerUserAgent string) {
