@@ -15,14 +15,21 @@ import (
 	"github.com/acronis/go-appkit/log"
 )
 
+// ctxKey is a type for context keys used in the gRPC server interceptor.
 type ctxKey int
 
 const (
+	// ctxKeyRequestID is the context key for storing external request ID.
 	ctxKeyRequestID ctxKey = iota
+	// ctxKeyInternalRequestID is the context key for storing internal request ID.
 	ctxKeyInternalRequestID
+	// ctxKeyLogger is the context key for storing logger instance.
 	ctxKeyLogger
+	// ctxKeyLoggingParams is the context key for storing logging parameters.
 	ctxKeyLoggingParams
+	// ctxKeyTraceID is the context key for storing trace ID.
 	ctxKeyTraceID
+	// ctxKeyCallStartTime is the context key for storing call start time.
 	ctxKeyCallStartTime
 )
 
