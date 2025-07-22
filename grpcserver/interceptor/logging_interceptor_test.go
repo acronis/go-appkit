@@ -329,10 +329,11 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_ExcludedMetho
 
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests() {
 	const headerRequestID = "test-request-id"
+	const slowCallThreshold = 10 * time.Millisecond
 
 	logger := logtest.NewRecorder()
 	svc, client, closeSvc, err := s.setupTestService(logger, "", []LoggingOption{
-		WithLoggingSlowCallThreshold(10 * time.Millisecond),
+		WithLoggingSlowCallThreshold(slowCallThreshold),
 	})
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
@@ -340,12 +341,12 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests(
 	// Set up a slow handler
 	svc.SwitchUnaryCallHandler(
 		func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
-			time.Sleep(50 * time.Millisecond) // Simulate slow processing
+			time.Sleep(slowCallThreshold * 2) // Simulate slow processing
 			return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
 		})
 	svc.SwitchStreamingOutputCallHandler(
 		func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
-			time.Sleep(50 * time.Millisecond) // Simulate slow processing
+			time.Sleep(slowCallThreshold * 2) // Simulate slow processing
 			return stream.Send(&grpc_testing.StreamingOutputCallResponse{
 				Payload: &grpc_testing.Payload{Body: []byte("test")},
 			})
@@ -379,6 +380,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests(
 
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams() {
 	const headerRequestID = "test-request-id"
+	const slowCallThreshold = 10 * time.Millisecond
 
 	tests := []struct {
 		name              string
@@ -391,6 +393,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams
 		{
 			name: "LoggingParams with extended fields",
 			setupParams: func(params *LoggingParams) {
+				time.Sleep(slowCallThreshold * 2) // Simulate some processing time
 				params.ExtendFields(
 					log.String("custom_field", "custom_value"),
 					log.Int("number_field", 42),
@@ -407,7 +410,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams
 		{
 			name: "LoggingParams with time slots",
 			setupParams: func(params *LoggingParams) {
-				time.Sleep(50 * time.Millisecond) // Simulate some processing time
+				time.Sleep(slowCallThreshold * 2) // Simulate some processing time
 				params.AddTimeSlotInt("db_query", 150)
 				params.AddTimeSlotDurationInMs("processing", 75*time.Millisecond)
 			},
@@ -417,7 +420,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams
 		{
 			name: "LoggingParams with both fields and time slots",
 			setupParams: func(params *LoggingParams) {
-				time.Sleep(50 * time.Millisecond) // Simulate some processing time
+				time.Sleep(slowCallThreshold * 2) // Simulate some processing time
 				params.ExtendFields(log.String("operation", "test_op"))
 				params.AddTimeSlotInt("cache_lookup", 25)
 			},
@@ -436,8 +439,8 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams
 			// Setup test service with custom handler that modifies logging params
 			var options []LoggingOption
 			if tt.expectedTimeSlot != "" {
-				// Use very low threshold to ensure time_slots are logged
-				options = []LoggingOption{WithLoggingSlowCallThreshold(10 * time.Millisecond)}
+				// Use low threshold to ensure time_slots are logged
+				options = []LoggingOption{WithLoggingSlowCallThreshold(slowCallThreshold)}
 			}
 			_, client, closeSvc, err := s.setupTestServiceWithLoggingParamsHandlerAndOptions(logger, tt.setupParams, options)
 			s.Require().NoError(err)
