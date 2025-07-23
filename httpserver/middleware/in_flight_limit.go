@@ -163,17 +163,16 @@ func MustInFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOp
 }
 
 func (h *inFlightLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	key := ""
+	var key string
 	if h.getKey != nil {
 		var bypass bool
 		var err error
-		key, bypass, err = h.getKey(r)
-		if err != nil {
+		if key, bypass, err = h.getKey(r); err != nil {
 			h.onError(rw, r, h.makeParams("", false), fmt.Errorf("get key for in-flight limit: %w", err),
 				h.next, GetLoggerFromContext(r.Context()))
 			return
 		}
-		if bypass { // Throttling is not needed.
+		if bypass { // In-flight limiting is bypassed for this request.
 			h.next.ServeHTTP(rw, r)
 			return
 		}
@@ -226,14 +225,14 @@ func (h *inFlightLimitHandler) serveBackloggedRequest(
 		return
 	}
 
-	backlogTimer := time.NewTimer(h.backlogTimeout)
-	defer backlogTimer.Stop()
+	backlogTimeoutTimer := time.NewTimer(h.backlogTimeout)
+	defer backlogTimeoutTimer.Stop()
 
 	select {
 	case slots <- struct{}{}:
 		acquired = true
 		h.next.ServeHTTP(rw, r)
-	case <-backlogTimer.C:
+	case <-backlogTimeoutTimer.C:
 		h.onReject(rw, r, h.makeParams(key, true), h.next, GetLoggerFromContext(r.Context()))
 	case <-r.Context().Done():
 		h.onError(rw, r, h.makeParams(key, true), r.Context().Err(), h.next, GetLoggerFromContext(r.Context()))

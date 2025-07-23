@@ -129,7 +129,7 @@ func RateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) (func
 		return nil, fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit)
 	}
 	if opts.DryRun {
-		backlogLimit = 0
+		backlogLimit = 0 // Backlogging should be disabled in dry-run mode to avoid blocking requests.
 	}
 
 	maxKeys := 0
@@ -195,19 +195,17 @@ func MustRateLimitWithOpts(maxRate Rate, errDomain string, opts RateLimitOpts) f
 	return mw
 }
 
-//nolint:funlen,gocyclo
 func (h *rateLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	key := ""
+	var key string
 	if h.getKey != nil {
 		var bypass bool
 		var err error
-		key, bypass, err = h.getKey(r)
-		if err != nil {
+		if key, bypass, err = h.getKey(r); err != nil {
 			h.onError(rw, r, h.makeParams("", false, 0), fmt.Errorf("get key for rate limit: %w", err),
 				h.next, GetLoggerFromContext(r.Context()))
 			return
 		}
-		if bypass { // Throttling is not needed.
+		if bypass { // Rate limiting is bypassed for this request.
 			h.next.ServeHTTP(rw, r)
 			return
 		}
@@ -229,60 +227,79 @@ func (h *rateLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.handleBacklogProcessing(rw, r, key, retryAfter)
+}
+
+func (h *rateLimitHandler) handleBacklogProcessing(
+	rw http.ResponseWriter, r *http.Request, key string, retryAfter time.Duration,
+) {
 	backlogSlots := h.getBacklogSlots(key)
 	backlogged := false
-	defer func() {
-		if backlogged {
-			select {
-			case <-backlogSlots:
-			default:
-			}
-		}
-	}()
 	select {
 	case backlogSlots <- struct{}{}:
 		backlogged = true
 	default:
-		// Cannot backlog request, reject immediately.
+		// There are no free slots in the backlog, reject the request immediately.
 		h.onReject(rw, r, h.makeParams(key, backlogged, retryAfter), h.next, GetLoggerFromContext(r.Context()))
 		return
 	}
 
-	backlogTimer := time.NewTimer(h.backlogTimeout)
-	defer backlogTimer.Stop()
-
-	retryTimer := time.NewTimer(retryAfter)
-	defer retryTimer.Stop()
-
-	stop := false
-	for !stop {
-		select {
-		case <-retryTimer.C:
-		case <-backlogTimer.C:
-			stop = true
-		case <-r.Context().Done():
-			h.onError(rw, r, h.makeParams(key, backlogged, retryAfter), r.Context().Err(), h.next, GetLoggerFromContext(r.Context()))
-			return
-		}
-		allow, retryAfter, err = h.limiter.Allow(r.Context(), key)
-		if err != nil {
-			h.onError(rw, r, h.makeParams(key, backlogged, retryAfter), fmt.Errorf("requests rate limit: %w", err),
-				h.next, GetLoggerFromContext(r.Context()))
-			return
-		}
-		if allow {
+	freeBacklogSlotIfNeeded := func() {
+		if backlogged {
 			select {
 			case <-backlogSlots:
 				backlogged = false
 			default:
 			}
+		}
+	}
+
+	defer freeBacklogSlotIfNeeded()
+
+	backlogTimeoutTimer := time.NewTimer(h.backlogTimeout)
+	defer backlogTimeoutTimer.Stop()
+
+	retryTimer := time.NewTimer(retryAfter)
+	defer retryTimer.Stop()
+
+	var allow bool
+	var err error
+
+	for {
+		select {
+		case <-retryTimer.C:
+			// Will do another check of the rate limit.
+		case <-backlogTimeoutTimer.C:
+			freeBacklogSlotIfNeeded()
+			h.onReject(rw, r, h.makeParams(key, backlogged, retryAfter), h.next, GetLoggerFromContext(r.Context()))
+			return
+		case <-r.Context().Done():
+			freeBacklogSlotIfNeeded()
+			h.onError(rw, r, h.makeParams(key, backlogged, retryAfter), r.Context().Err(), h.next, GetLoggerFromContext(r.Context()))
+			return
+		}
+
+		if allow, retryAfter, err = h.limiter.Allow(r.Context(), key); err != nil {
+			freeBacklogSlotIfNeeded()
+			h.onError(rw, r, h.makeParams(key, backlogged, retryAfter), fmt.Errorf("requests rate limit: %w", err),
+				h.next, GetLoggerFromContext(r.Context()))
+			return
+		}
+
+		if allow {
+			freeBacklogSlotIfNeeded()
 			h.next.ServeHTTP(rw, r)
 			return
 		}
+
+		if !retryTimer.Stop() {
+			select {
+			case <-retryTimer.C:
+			default:
+			}
+		}
 		retryTimer.Reset(retryAfter)
 	}
-
-	h.onReject(rw, r, h.makeParams(key, backlogged, retryAfter), h.next, GetLoggerFromContext(r.Context()))
 }
 
 func (h *rateLimitHandler) makeParams(key string, backlogged bool, estimatedRetryAfter time.Duration) RateLimitParams {
@@ -301,7 +318,8 @@ func GetRetryAfterEstimatedTime(_ *http.Request, estimatedTime time.Duration) ti
 	return estimatedTime
 }
 
-// DefaultRateLimitOnReject sends HTTP response in a typical go-appkit way when the rate limit is exceeded.
+// DefaultRateLimitOnReject sends HTTP response in a typical go-appkit way when the rate limit is exceeded,
+// or when the request is backlogged and the backlog limit is exceeded.
 func DefaultRateLimitOnReject(
 	rw http.ResponseWriter, r *http.Request, params RateLimitParams, next http.Handler, logger log.FieldLogger,
 ) {
