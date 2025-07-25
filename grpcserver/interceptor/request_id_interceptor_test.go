@@ -46,11 +46,11 @@ func (s *RequestIDInterceptorTestSuite) TestRequestIDServerInterceptor() {
 			checkFn: func(t *testing.T, svc *testService, respHeader metadata.MD) {
 				reqID := s.getStringFromMd(respHeader, headerRequestIDKey)
 				require.NotEmpty(t, reqID)
-				require.Equal(t, reqID, GetRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, reqID, GetRequestIDFromContext(svc.LastContext()))
 
 				intReqID := s.getStringFromMd(respHeader, headerRequestInternalIDKey)
 				require.NotEmpty(t, intReqID)
-				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.LastContext()))
 
 				require.NotEqual(t, reqID, intReqID)
 			},
@@ -62,11 +62,11 @@ func (s *RequestIDInterceptorTestSuite) TestRequestIDServerInterceptor() {
 			checkFn: func(t *testing.T, svc *testService, respHeader metadata.MD) {
 				reqID := s.getStringFromMd(respHeader, headerRequestIDKey)
 				require.Equal(t, "existing-request-id", reqID)
-				require.Equal(t, reqID, GetRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, reqID, GetRequestIDFromContext(svc.LastContext()))
 
 				intReqID := s.getStringFromMd(respHeader, headerRequestInternalIDKey)
 				require.NotEmpty(t, intReqID)
-				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.LastContext()))
 
 				require.NotEqual(t, reqID, intReqID)
 			},
@@ -81,11 +81,11 @@ func (s *RequestIDInterceptorTestSuite) TestRequestIDServerInterceptor() {
 			checkFn: func(t *testing.T, svc *testService, respHeader metadata.MD) {
 				reqID := s.getStringFromMd(respHeader, headerRequestIDKey)
 				require.Equal(t, "custom-request-id", reqID)
-				require.Equal(t, reqID, GetRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, reqID, GetRequestIDFromContext(svc.LastContext()))
 
 				intReqID := s.getStringFromMd(respHeader, headerRequestInternalIDKey)
 				require.Equal(t, "custom-internal-id", intReqID)
-				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.LastContext()))
 			},
 		},
 		{
@@ -98,11 +98,11 @@ func (s *RequestIDInterceptorTestSuite) TestRequestIDServerInterceptor() {
 			checkFn: func(t *testing.T, svc *testService, respHeader metadata.MD) {
 				reqID := s.getStringFromMd(respHeader, headerRequestIDKey)
 				require.Equal(t, "existing-request-id", reqID)
-				require.Equal(t, reqID, GetRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, reqID, GetRequestIDFromContext(svc.LastContext()))
 
 				intReqID := s.getStringFromMd(respHeader, headerRequestInternalIDKey)
 				require.Equal(t, "custom-internal-id", intReqID)
-				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.lastCtx))
+				require.Equal(t, intReqID, GetInternalRequestIDFromContext(svc.LastContext()))
 			},
 		},
 		{

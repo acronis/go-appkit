@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync/atomic"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,13 +20,13 @@ import (
 
 type testService struct {
 	grpc_testing.UnimplementedTestServiceServer
-	lastCtx                    context.Context
+	lastCtx                    atomic.Value
 	unaryCallHandler           func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error)
 	streamingOutputCallHandler func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error
 }
 
 func (s *testService) UnaryCall(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
-	s.lastCtx = ctx
+	s.lastCtx.Store(ctx)
 	if s.unaryCallHandler != nil {
 		return s.unaryCallHandler(ctx, req)
 	}
@@ -33,7 +34,7 @@ func (s *testService) UnaryCall(ctx context.Context, req *grpc_testing.SimpleReq
 }
 
 func (s *testService) StreamingOutputCall(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
-	s.lastCtx = stream.Context()
+	s.lastCtx.Store(stream.Context())
 	if s.streamingOutputCallHandler != nil {
 		return s.streamingOutputCallHandler(req, stream)
 	}
@@ -54,8 +55,15 @@ func (s *testService) SwitchStreamingOutputCallHandler(
 	s.streamingOutputCallHandler = handler
 }
 
+func (s *testService) LastContext() context.Context {
+	if ctx, ok := s.lastCtx.Load().(context.Context); ok {
+		return ctx
+	}
+	return nil
+}
+
 func (s *testService) Reset() {
-	s.lastCtx = nil
+	s.lastCtx.Store(nil)
 	s.unaryCallHandler = nil
 	s.streamingOutputCallHandler = nil
 }
