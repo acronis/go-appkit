@@ -7,22 +7,20 @@ Released under MIT license.
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/acronis/go-appkit/internal/inflightlimit"
 	"github.com/acronis/go-appkit/log"
-	"github.com/acronis/go-appkit/lrucache"
 	"github.com/acronis/go-appkit/restapi"
 )
 
 // DefaultInFlightLimitMaxKeys is a default value of maximum keys number for the InFlightLimit middleware.
 const DefaultInFlightLimitMaxKeys = 10000
-
-// DefaultInFlightLimitBacklogTimeout determines how long the HTTP request may be in the backlog status.
-const DefaultInFlightLimitBacklogTimeout = time.Second * 5
 
 // InFlightLimitErrCode is the error code that is used in a response body
 // if the request is rejected by the middleware that limits in-flight HTTP requests.
@@ -60,14 +58,12 @@ type InFlightLimitOnErrorFunc func(rw http.ResponseWriter, r *http.Request,
 type InFlightLimitGetKeyFunc func(r *http.Request) (key string, bypass bool, err error)
 
 type inFlightLimitHandler struct {
+	processor      *inflightlimit.RequestProcessor
 	next           http.Handler
 	getKey         InFlightLimitGetKeyFunc
-	getSlots       func(key string) (inFlightSlots chan struct{}, backlogSlots chan struct{})
-	backlogTimeout time.Duration
 	errDomain      string
 	respStatusCode int
 	getRetryAfter  InFlightLimitGetRetryAfterFunc
-	dryRun         bool
 
 	onReject InFlightLimitOnRejectFunc
 	onError  InFlightLimitOnErrorFunc
@@ -105,18 +101,9 @@ func MustInFlightLimit(limit int, errDomain string) func(next http.Handler) http
 
 // InFlightLimitWithOpts is a configurable version of a middleware to limit in-flight HTTP requests.
 func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) (func(next http.Handler) http.Handler, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("limit should be positive, got %d", limit)
-	}
-
-	backlogLimit := opts.BacklogLimit
-	if backlogLimit < 0 {
-		return nil, fmt.Errorf("backlog limit should not be negative, got %d", backlogLimit)
-	}
-
 	backlogTimeout := opts.BacklogTimeout
 	if backlogTimeout == 0 {
-		backlogTimeout = DefaultInFlightLimitBacklogTimeout
+		backlogTimeout = inflightlimit.DefaultInFlightLimitBacklogTimeout
 	}
 
 	maxKeys := 0
@@ -127,9 +114,15 @@ func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) 
 		}
 	}
 
-	getSlots, err := makeInFlightLimitSlotsProvider(limit, backlogLimit, maxKeys)
+	backlogParams := inflightlimit.BacklogParams{
+		MaxKeys: maxKeys,
+		Limit:   opts.BacklogLimit,
+		Timeout: backlogTimeout,
+	}
+
+	processor, err := inflightlimit.NewRequestProcessor(limit, backlogParams, opts.DryRun)
 	if err != nil {
-		return nil, fmt.Errorf("make in-flight limit slots provider: %w", err)
+		return nil, fmt.Errorf("create request processor: %w", err)
 	}
 
 	respStatusCode := opts.ResponseStatusCode
@@ -139,14 +132,12 @@ func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) 
 
 	return func(next http.Handler) http.Handler {
 		return &inFlightLimitHandler{
+			processor:      processor,
 			next:           next,
 			getKey:         opts.GetKey,
-			getSlots:       getSlots,
-			backlogTimeout: backlogTimeout,
 			errDomain:      errDomain,
 			respStatusCode: respStatusCode,
 			getRetryAfter:  opts.GetRetryAfter,
-			dryRun:         opts.DryRun,
 			onReject:       makeInFlightLimitOnRejectFunc(opts),
 			onError:        makeInFlightLimitOnErrorFunc(opts),
 		}
@@ -162,91 +153,52 @@ func MustInFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOp
 	return mw
 }
 
-func (h *inFlightLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	var key string
-	if h.getKey != nil {
-		var bypass bool
-		var err error
-		if key, bypass, err = h.getKey(r); err != nil {
-			h.onError(rw, r, h.makeParams("", false), fmt.Errorf("get key for in-flight limit: %w", err),
-				h.next, GetLoggerFromContext(r.Context()))
-			return
-		}
-		if bypass { // In-flight limiting is bypassed for this request.
-			h.next.ServeHTTP(rw, r)
-			return
-		}
-	}
-
-	slots, backlogSlots := h.getSlots(key)
-
-	backlogged := false
-	defer func() {
-		if backlogged {
-			select {
-			case <-backlogSlots:
-			default:
-			}
-		}
-	}()
-
-	select {
-	case backlogSlots <- struct{}{}:
-		backlogged = true
-		h.serveBackloggedRequest(rw, r, key, slots)
-	default:
-		h.onReject(rw, r, h.makeParams(key, false), h.next, GetLoggerFromContext(r.Context()))
-	}
+// inFlightLimitRequestHandler implements inflightlimit.RequestHandler for HTTP requests.
+type inFlightLimitRequestHandler struct {
+	rw     http.ResponseWriter
+	r      *http.Request
+	parent *inFlightLimitHandler
 }
 
-func (h *inFlightLimitHandler) serveBackloggedRequest(
-	rw http.ResponseWriter, r *http.Request, key string, slots chan struct{},
-) {
-	acquired := false
-	defer func() {
-		if acquired {
-			select {
-			case <-slots:
-			default:
-			}
-		}
-	}()
-
-	if h.dryRun {
-		// In dry-run mode we must not affect incoming HTTP request.
-		// I.e. we don't need to wait for the backlog timeout and do other things that may slow down request handling.
-		select {
-		case slots <- struct{}{}:
-			acquired = true
-			h.next.ServeHTTP(rw, r)
-		default:
-			h.onReject(rw, r, h.makeParams(key, true), h.next, GetLoggerFromContext(r.Context()))
-		}
-		return
-	}
-
-	backlogTimeoutTimer := time.NewTimer(h.backlogTimeout)
-	defer backlogTimeoutTimer.Stop()
-
-	select {
-	case slots <- struct{}{}:
-		acquired = true
-		h.next.ServeHTTP(rw, r)
-	case <-backlogTimeoutTimer.C:
-		h.onReject(rw, r, h.makeParams(key, true), h.next, GetLoggerFromContext(r.Context()))
-	case <-r.Context().Done():
-		h.onError(rw, r, h.makeParams(key, true), r.Context().Err(), h.next, GetLoggerFromContext(r.Context()))
-	}
+func (rh *inFlightLimitRequestHandler) GetContext() context.Context {
+	return rh.r.Context()
 }
 
-func (h *inFlightLimitHandler) makeParams(key string, backlogged bool) InFlightLimitParams {
+func (rh *inFlightLimitRequestHandler) GetKey() (key string, bypass bool, err error) {
+	if rh.parent.getKey != nil {
+		return rh.parent.getKey(rh.r)
+	}
+	return "", false, nil
+}
+
+func (rh *inFlightLimitRequestHandler) Execute() error {
+	rh.parent.next.ServeHTTP(rh.rw, rh.r)
+	return nil
+}
+
+func (rh *inFlightLimitRequestHandler) OnReject(params inflightlimit.Params) error {
+	rh.parent.onReject(rh.rw, rh.r, rh.convertParams(params), rh.parent.next, GetLoggerFromContext(rh.r.Context()))
+	return nil
+}
+
+func (rh *inFlightLimitRequestHandler) OnError(params inflightlimit.Params, err error) error {
+	rh.parent.onError(rh.rw, rh.r, rh.convertParams(params), err, rh.parent.next, GetLoggerFromContext(rh.r.Context()))
+	return nil
+}
+
+func (rh *inFlightLimitRequestHandler) convertParams(params inflightlimit.Params) InFlightLimitParams {
 	return InFlightLimitParams{
-		ErrDomain:          h.errDomain,
-		ResponseStatusCode: h.respStatusCode,
-		GetRetryAfter:      h.getRetryAfter,
-		Key:                key,
-		RequestBacklogged:  backlogged,
+		ResponseStatusCode: rh.parent.respStatusCode,
+		GetRetryAfter:      rh.parent.getRetryAfter,
+		ErrDomain:          rh.parent.errDomain,
+		Key:                params.Key,
+		RequestBacklogged:  params.RequestBacklogged,
 	}
+}
+
+func (h *inFlightLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	requestHandler := &inFlightLimitRequestHandler{rw: rw, r: r, parent: h}
+	_ = h.processor.ProcessRequest(requestHandler) // Error is always nil, as it is handled in the inFlightLimitRequestHandler methods.
 }
 
 // DefaultInFlightLimitOnReject sends HTTP response in a typical go-appkit way when the in-flight limit is exceeded.
@@ -291,35 +243,6 @@ func DefaultInFlightLimitOnError(
 		logger.Error(err.Error(), log.String(InFlightLimitLogFieldKey, params.Key))
 	}
 	restapi.RespondInternalError(rw, params.ErrDomain, logger)
-}
-
-func makeInFlightLimitSlotsProvider(limit, backlogLimit, maxKeys int) (func(key string) (chan struct{}, chan struct{}), error) {
-	if maxKeys == 0 {
-		slots := make(chan struct{}, limit)
-		backlogSlots := make(chan struct{}, limit+backlogLimit)
-		return func(key string) (chan struct{}, chan struct{}) {
-			return slots, backlogSlots
-		}, nil
-	}
-
-	type KeysZoneItem struct {
-		slots        chan struct{}
-		backlogSlots chan struct{}
-	}
-
-	keysZone, err := lrucache.New[string, KeysZoneItem](maxKeys, nil)
-	if err != nil {
-		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
-	}
-	return func(key string) (chan struct{}, chan struct{}) {
-		keysZoneItem, _ := keysZone.GetOrAdd(key, func() KeysZoneItem {
-			return KeysZoneItem{
-				slots:        make(chan struct{}, limit),
-				backlogSlots: make(chan struct{}, limit+backlogLimit),
-			}
-		})
-		return keysZoneItem.slots, keysZoneItem.backlogSlots
-	}, nil
 }
 
 func makeInFlightLimitOnRejectFunc(opts InFlightLimitOpts) InFlightLimitOnRejectFunc {

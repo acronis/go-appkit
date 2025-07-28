@@ -49,7 +49,7 @@ func main () {
 
 ## Documentation
 
-- [Interceptors](interceptor/README.md) - Logging, metrics, recovery, and request ID interceptors
+- [Interceptors](interceptor/README.md) - Logging, metrics, recovery, throttling, and request ID interceptors
 - [Echo Service Example](examples/echo-service/README.md) - Complete working example with testing instructions
 
 ## Configuration

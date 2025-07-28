@@ -1,6 +1,26 @@
 # grpcserver/interceptor
 
-A collection of gRPC interceptors for logging, metrics collection, panic recovery, request ID handling, and rate limiting. These interceptors enhance gRPC services with observability, reliability, and traffic control features.
+A collection of gRPC interceptors for logging, metrics collection, panic recovery, request ID handling, rate limiting, and in-flight limiting. These interceptors enhance gRPC services with observability, reliability, and traffic control features.
+
+## Table of Contents
+
+- [Available Interceptors](#available-interceptors)
+  - [Logging Interceptor](#logging-interceptor)
+  - [Metrics Interceptor](#metrics-interceptor)
+  - [Recovery Interceptor](#recovery-interceptor)
+  - [Request ID Interceptor](#request-id-interceptor)
+  - [Rate Limiting Interceptor](#rate-limiting-interceptor)
+  - [In-Flight Limiting Interceptor](#in-flight-limiting-interceptor)
+- [Context Utilities](#context-utilities)
+  - [Call Start Time](#call-start-time)
+  - [Request IDs](#request-ids)
+  - [Trace ID](#trace-id)
+  - [Logger](#logger)
+  - [Logging Parameters](#logging-parameters)
+- [Stream Utilities](#stream-utilities)
+  - [WrappedServerStream](#wrappedserverstream)
+- [Integration Example](#integration-example)
+- [Best Practices](#best-practices)
 
 ## Available Interceptors
 
@@ -245,6 +265,121 @@ func rateLimitByTenant(ctx context.Context, req interface{}, info *grpc.UnarySer
 **Headers:**
 - `retry-after`: Number of seconds to wait before retrying (set automatically)
 
+### In-Flight Limiting Interceptor
+
+Controls the number of concurrent requests being processed, preventing server overload by limiting in-flight requests.
+
+**Features:**
+- Maximum concurrent request limiting
+- Per-client in-flight limiting with custom key extraction
+- Backlog support for queuing requests when limit is reached
+- Dry run mode for testing without enforcement
+- Customizable callbacks for rejection and error handling
+- Retry-After header support
+- Comprehensive logging and error handling
+
+**Usage:**
+```go
+import "github.com/acronis/go-appkit/grpcserver/interceptor"
+
+// Basic usage with maximum 10 concurrent requests
+unaryInterceptor, err := interceptor.InFlightLimitUnaryInterceptor(10)
+streamInterceptor, err := interceptor.InFlightLimitStreamInterceptor(10)
+
+// With advanced configuration
+unaryInterceptor, err := interceptor.InFlightLimitUnaryInterceptor(10,
+    // Per-client in-flight limiting
+    interceptor.WithInFlightLimitUnaryGetKey(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (string, bool, error) {
+        if md, ok := metadata.FromIncomingContext(ctx); ok {
+            if clientIDs := md.Get("client-id"); len(clientIDs) > 0 {
+                return clientIDs[0], false, nil
+            }
+        }
+        return "", true, nil // bypass if no client-id
+    }),
+    
+    // Backlog configuration
+    interceptor.WithInFlightLimitBacklogLimit(50),
+    interceptor.WithInFlightLimitBacklogTimeout(30*time.Second),
+    
+    // Dry run mode
+    interceptor.WithInFlightLimitDryRun(true),
+    
+    // Custom rejection handler
+    interceptor.WithInFlightLimitUnaryOnReject(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler, params interceptor.InFlightLimitParams) (interface{}, error) {
+        // Custom rejection logic
+        return nil, status.Error(codes.ResourceExhausted, "Too many concurrent requests for key: "+params.Key)
+    }),
+    
+    // Retry-After calculation
+    interceptor.WithInFlightLimitUnaryGetRetryAfter(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) time.Duration {
+        return 30 * time.Second
+    }),
+)
+```
+
+**Key Extraction Examples:**
+```go
+// In-flight limit by client IP
+func inFlightLimitByIP(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (string, bool, error) {
+    if p, ok := peer.FromContext(ctx); ok {
+        if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
+            return host, false, nil
+        }
+        return p.Addr.String(), false, nil
+    }
+    return "", true, nil // bypass if no peer info
+}
+
+// In-flight limit by user ID from JWT
+func inFlightLimitByUserID(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (string, bool, error) {
+    userID := getUserIDFromJWT(ctx)
+    if userID != "" {
+        return userID, false, nil
+    }
+    return "", true, nil // bypass for unauthenticated requests
+}
+
+// In-flight limit by tenant ID from metadata
+func inFlightLimitByTenant(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (string, bool, error) {
+    if md, ok := metadata.FromIncomingContext(ctx); ok {
+        if tenantIDs := md.Get("x-tenant-id"); len(tenantIDs) > 0 {
+            return tenantIDs[0], false, nil
+        }
+    }
+    return "", true, nil // bypass if no tenant
+}
+```
+
+**Configuration Options:**
+- `WithInFlightLimitUnaryGetKey(func)`: Extract key from unary requests for per-client limiting
+- `WithInFlightLimitStreamGetKey(func)`: Extract key from stream requests for per-client limiting
+- `WithInFlightLimitMaxKeys(int)`: Maximum number of keys to track (default: 10000)
+- `WithInFlightLimitDryRun(bool)`: Enable dry run mode for testing
+- `WithInFlightLimitBacklogLimit(int)`: Number of requests to queue when limit is reached
+- `WithInFlightLimitBacklogTimeout(time.Duration)`: Maximum time to wait in backlog
+- `WithInFlightLimitUnaryOnReject(func)`: Custom handler for rejected unary requests
+- `WithInFlightLimitStreamOnReject(func)`: Custom handler for rejected stream requests
+- `WithInFlightLimitUnaryOnRejectInDryRun(func)`: Custom handler for dry run rejections
+- `WithInFlightLimitStreamOnRejectInDryRun(func)`: Custom handler for dry run rejections
+- `WithInFlightLimitUnaryOnError(func)`: Custom handler for in-flight limiting errors
+- `WithInFlightLimitStreamOnError(func)`: Custom handler for in-flight limiting errors
+- `WithInFlightLimitUnaryGetRetryAfter(func)`: Calculate retry-after value for unary requests
+- `WithInFlightLimitStreamGetRetryAfter(func)`: Calculate retry-after value for stream requests
+
+**Error Responses:**
+- In-flight limit exceeded: `codes.ResourceExhausted` with "Too many in-flight requests" message
+- In-flight limiting errors: `codes.Internal` with "Internal server error" message
+- Custom responses: Configurable via callback functions
+
+**Headers:**
+- `retry-after`: Number of seconds to wait before retrying (set automatically)
+
+**Differences from Rate Limiting:**
+- **In-flight limiting**: Controls concurrent processing, focuses on server capacity
+- **Rate limiting**: Controls request frequency over time, focuses on traffic shaping
+- **Use together**: Rate limiting for traffic control, in-flight limiting for overload protection
+
 ## Context Utilities
 
 The package provides utilities for working with context values:
@@ -358,6 +493,41 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
         panic(err)
     }
     
+    // Create in-flight limiting interceptor
+    inFlightUnary, err := interceptor.InFlightLimitUnaryInterceptor(50,
+        interceptor.WithInFlightLimitUnaryGetKey(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (string, bool, error) {
+            // In-flight limit by client IP
+            if p, ok := peer.FromContext(ctx); ok {
+                if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
+                    return host, false, nil
+                }
+            }
+            return "", true, nil
+        }),
+        interceptor.WithInFlightLimitBacklogLimit(100),
+        interceptor.WithInFlightLimitBacklogTimeout(30*time.Second),
+    )
+    if err != nil {
+        panic(err)
+    }
+    
+    inFlightStream, err := interceptor.InFlightLimitStreamInterceptor(50,
+        interceptor.WithInFlightLimitStreamGetKey(func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo) (string, bool, error) {
+            // In-flight limit by client IP
+            if p, ok := peer.FromContext(ss.Context()); ok {
+                if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
+                    return host, false, nil
+                }
+            }
+            return "", true, nil
+        }),
+        interceptor.WithInFlightLimitBacklogLimit(100),
+        interceptor.WithInFlightLimitBacklogTimeout(30*time.Second),
+    )
+    if err != nil {
+        panic(err)
+    }
+    
     // Create interceptor chain
     unaryInterceptors := []grpc.UnaryServerInterceptor{
         // Set call start time first
@@ -378,6 +548,8 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
         interceptor.MetricsUnaryInterceptor(metrics),
         // Rate limiting
         rateLimitUnary,
+        // In-flight limiting
+        inFlightUnary,
     }
     
     streamInterceptors := []grpc.StreamServerInterceptor{
@@ -398,6 +570,8 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
         interceptor.RecoveryStreamInterceptor(),
         // Metrics
         interceptor.MetricsStreamInterceptor(metrics),
+        // In-flight limiting
+        inFlightStream,
         // Rate limiting
         rateLimitStream,
     }
@@ -417,6 +591,7 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
    - Logging
    - Recovery
    - Metrics
+   - In-flight limiting
    - Rate limiting
    - Custom interceptors (last)
 
@@ -427,17 +602,25 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
    - Configure appropriate backlog limits and timeouts based on your service capacity
    - Monitor rate limiting metrics and adjust limits based on traffic patterns
 
-3. **Performance**: Use method exclusion for high-frequency health checks and metrics endpoints
+3. **In-Flight Limiting**:
+   - Set limits based on your server's actual processing capacity and available resources
+   - Use per-client limiting to prevent single clients from consuming all capacity
+   - Configure appropriate backlog limits to handle temporary spikes without rejecting requests
+   - Use dry run mode to test limits in production before enforcement
+   - Combine with rate limiting: rate limiting for traffic shaping, in-flight limiting for overload protection
+   - Monitor in-flight counts and adjust limits based on server performance metrics
 
-4. **Security**: Be careful with custom header logging to avoid logging sensitive information
+4. **Performance**: Use method exclusion for high-frequency health checks and metrics endpoints
 
-5. **Metrics**: Use appropriate duration buckets for your use case
+5. **Security**: Be careful with custom header logging to avoid logging sensitive information
 
-6. **Error Handling**: Always use the recovery interceptor to prevent panics from crashing the server
+6. **Metrics**: Use appropriate duration buckets for your use case
 
-7. **Context**: Use the provided context utilities for consistent data access across interceptors
+7. **Error Handling**: Always use the recovery interceptor to prevent panics from crashing the server
 
-8. **Rate Limiting Key Selection**:
+8. **Context**: Use the provided context utilities for consistent data access across interceptors
+
+9. **Rate Limiting Key Selection**:
    - Choose keys that provide fair distribution (e.g., client IP, user ID)
    - Avoid keys that could lead to hot spots (e.g., constant values)
    - Consider using multiple levels of rate limiting (global + per-client)
