@@ -38,6 +38,9 @@ type RequestHandler interface {
 	// OnReject handles request rejection when in-flight limit is exceeded.
 	OnReject(params Params) error
 
+	// OnRejectInDryRun handles request rejection in dry run mode.
+	OnRejectInDryRun(params Params) error
+
 	// OnError handles errors that occur during in-flight limiting.
 	OnError(params Params, err error) error
 }
@@ -115,6 +118,9 @@ func (p *RequestProcessor) ProcessRequest(rh RequestHandler) error {
 	case backlogSlots <- struct{}{}:
 		backlogged = true
 	default:
+		if p.dryRun {
+			return rh.OnRejectInDryRun(Params{Key: key, RequestBacklogged: false})
+		}
 		return rh.OnReject(Params{Key: key, RequestBacklogged: false})
 	}
 
@@ -139,8 +145,19 @@ func (p *RequestProcessor) processBackloggedRequest(rh RequestHandler, key strin
 			acquired = true
 			return rh.Execute()
 		default:
+			if p.dryRun {
+				return rh.OnRejectInDryRun(Params{Key: key, RequestBacklogged: true})
+			}
 			return rh.OnReject(Params{Key: key, RequestBacklogged: true})
 		}
+	}
+
+	// To avoid timer allocation on every request, we attempt to acquire the slot first.
+	select {
+	case slots <- struct{}{}:
+		acquired = true
+		return rh.Execute()
+	default:
 	}
 
 	ctx := rh.GetContext()

@@ -65,8 +65,9 @@ type inFlightLimitHandler struct {
 	respStatusCode int
 	getRetryAfter  InFlightLimitGetRetryAfterFunc
 
-	onReject InFlightLimitOnRejectFunc
-	onError  InFlightLimitOnErrorFunc
+	onReject         InFlightLimitOnRejectFunc
+	onRejectInDryRun InFlightLimitOnRejectFunc
+	onError          InFlightLimitOnErrorFunc
 }
 
 // InFlightLimitOpts represents an options for the middleware to limit in-flight HTTP requests.
@@ -132,14 +133,15 @@ func InFlightLimitWithOpts(limit int, errDomain string, opts InFlightLimitOpts) 
 
 	return func(next http.Handler) http.Handler {
 		return &inFlightLimitHandler{
-			processor:      processor,
-			next:           next,
-			getKey:         opts.GetKey,
-			errDomain:      errDomain,
-			respStatusCode: respStatusCode,
-			getRetryAfter:  opts.GetRetryAfter,
-			onReject:       makeInFlightLimitOnRejectFunc(opts),
-			onError:        makeInFlightLimitOnErrorFunc(opts),
+			processor:        processor,
+			next:             next,
+			getKey:           opts.GetKey,
+			errDomain:        errDomain,
+			respStatusCode:   respStatusCode,
+			getRetryAfter:    opts.GetRetryAfter,
+			onReject:         makeInFlightLimitOnRejectFunc(opts),
+			onRejectInDryRun: makeInFlightLimitOnRejectInDryRunFunc(opts),
+			onError:          makeInFlightLimitOnErrorFunc(opts),
 		}
 	}, nil
 }
@@ -178,6 +180,11 @@ func (rh *inFlightLimitRequestHandler) Execute() error {
 
 func (rh *inFlightLimitRequestHandler) OnReject(params inflightlimit.Params) error {
 	rh.parent.onReject(rh.rw, rh.r, rh.convertParams(params), rh.parent.next, GetLoggerFromContext(rh.r.Context()))
+	return nil
+}
+
+func (rh *inFlightLimitRequestHandler) OnRejectInDryRun(params inflightlimit.Params) error {
+	rh.parent.onRejectInDryRun(rh.rw, rh.r, rh.convertParams(params), rh.parent.next, GetLoggerFromContext(rh.r.Context()))
 	return nil
 }
 
@@ -246,16 +253,17 @@ func DefaultInFlightLimitOnError(
 }
 
 func makeInFlightLimitOnRejectFunc(opts InFlightLimitOpts) InFlightLimitOnRejectFunc {
-	if opts.DryRun {
-		if opts.OnRejectInDryRun != nil {
-			return opts.OnRejectInDryRun
-		}
-		return DefaultInFlightLimitOnRejectInDryRun
-	}
 	if opts.OnReject != nil {
 		return opts.OnReject
 	}
 	return DefaultInFlightLimitOnReject
+}
+
+func makeInFlightLimitOnRejectInDryRunFunc(opts InFlightLimitOpts) InFlightLimitOnRejectFunc {
+	if opts.OnRejectInDryRun != nil {
+		return opts.OnRejectInDryRun
+	}
+	return DefaultInFlightLimitOnRejectInDryRun
 }
 
 func makeInFlightLimitOnErrorFunc(opts InFlightLimitOpts) InFlightLimitOnErrorFunc {

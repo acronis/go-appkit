@@ -476,9 +476,37 @@ func (s *RequestProcessorTestSuite) TestProcessRequest_DryRunRejectWhenSlotsFull
 	err = processor.ProcessRequest(requestHandler)
 	s.NoError(err)
 	s.False(requestHandler.executeCalled)
-	s.True(requestHandler.onRejectCalled)
+	s.False(requestHandler.onRejectCalled)
+	s.True(requestHandler.onRejectInDryRunCalled)
 	s.Equal("test-key", requestHandler.lastParams.Key)
 	s.True(requestHandler.lastParams.RequestBacklogged)
+}
+
+func (s *RequestProcessorTestSuite) TestProcessRequest_DryRunRejectWhenBacklogFull() {
+	processor, err := NewRequestProcessor(1, BacklogParams{
+		MaxKeys: 0, // Single shared backlog
+		Limit:   1, // Backlog limit of 1
+		Timeout: time.Second,
+	}, true) // Dry run mode
+	s.NoError(err)
+
+	// Fill the backlog completely (in-flight + backlog = 1 + 1 = 2 total capacity)
+	_, backlogSlots := processor.getSlots("test-key")
+	backlogSlots <- struct{}{} // First slot
+	backlogSlots <- struct{}{} // Second slot - now backlog is full
+
+	requestHandler := &mockRequestHandler{
+		key:    "test-key",
+		bypass: false,
+	}
+
+	err = processor.ProcessRequest(requestHandler)
+	s.NoError(err)
+	s.False(requestHandler.executeCalled)
+	s.False(requestHandler.onRejectCalled)
+	s.True(requestHandler.onRejectInDryRunCalled)
+	s.Equal("test-key", requestHandler.lastParams.Key)
+	s.False(requestHandler.lastParams.RequestBacklogged) // Not backlogged because backlog was full
 }
 
 func (s *RequestProcessorTestSuite) TestProcessRequest_ExecuteError() {
@@ -506,16 +534,17 @@ func (s *RequestProcessorTestSuite) TestProcessRequest_ExecuteError() {
 
 // mockRequestHandler implements the RequestHandler interface for testing
 type mockRequestHandler struct {
-	ctx            context.Context
-	key            string
-	bypass         bool
-	keyError       error
-	executeError   error
-	executeCalled  bool
-	onRejectCalled bool
-	onErrorCalled  bool
-	lastParams     Params
-	lastError      error
+	ctx                    context.Context
+	key                    string
+	bypass                 bool
+	keyError               error
+	executeError           error
+	executeCalled          bool
+	onRejectCalled         bool
+	onRejectInDryRunCalled bool
+	onErrorCalled          bool
+	lastParams             Params
+	lastError              error
 }
 
 func (m *mockRequestHandler) GetContext() context.Context {
@@ -536,6 +565,12 @@ func (m *mockRequestHandler) Execute() error {
 
 func (m *mockRequestHandler) OnReject(params Params) error {
 	m.onRejectCalled = true
+	m.lastParams = params
+	return nil
+}
+
+func (m *mockRequestHandler) OnRejectInDryRun(params Params) error {
+	m.onRejectInDryRunCalled = true
 	m.lastParams = params
 	return nil
 }
