@@ -221,15 +221,17 @@ func InFlightLimitStreamInterceptor(limit int, options ...InFlightLimitOption) (
 }
 
 type inFlightLimitHandler struct {
-	processor           *inflightlimit.RequestProcessor
-	unaryGetKey         InFlightLimitUnaryGetKeyFunc
-	streamGetKey        InFlightLimitStreamGetKeyFunc
-	unaryOnReject       InFlightLimitUnaryOnRejectFunc
-	streamOnReject      InFlightLimitStreamOnRejectFunc
-	unaryOnError        InFlightLimitUnaryOnErrorFunc
-	streamOnError       InFlightLimitStreamOnErrorFunc
-	unaryGetRetryAfter  InFlightLimitUnaryGetRetryAfterFunc
-	streamGetRetryAfter InFlightLimitStreamGetRetryAfterFunc
+	processor              *inflightlimit.RequestProcessor
+	unaryGetKey            InFlightLimitUnaryGetKeyFunc
+	streamGetKey           InFlightLimitStreamGetKeyFunc
+	unaryOnReject          InFlightLimitUnaryOnRejectFunc
+	unaryOnRejectInDryRun  InFlightLimitUnaryOnRejectFunc
+	streamOnReject         InFlightLimitStreamOnRejectFunc
+	streamOnRejectInDryRun InFlightLimitStreamOnRejectFunc
+	unaryOnError           InFlightLimitUnaryOnErrorFunc
+	streamOnError          InFlightLimitStreamOnErrorFunc
+	unaryGetRetryAfter     InFlightLimitUnaryGetRetryAfterFunc
+	streamGetRetryAfter    InFlightLimitStreamGetRetryAfterFunc
 }
 
 func newInFlightLimitHandler(limit int, isUnary bool, options ...InFlightLimitOption) (*inFlightLimitHandler, error) {
@@ -266,15 +268,17 @@ func newInFlightLimitHandler(limit int, isUnary bool, options ...InFlightLimitOp
 	}
 
 	return &inFlightLimitHandler{
-		processor:           processor,
-		unaryGetKey:         opts.unaryGetKey,
-		streamGetKey:        opts.streamGetKey,
-		unaryOnReject:       makeInFlightLimitUnaryOnRejectFunc(opts),
-		streamOnReject:      makeInFlightLimitStreamOnRejectFunc(opts),
-		unaryOnError:        opts.unaryOnError,
-		streamOnError:       opts.streamOnError,
-		unaryGetRetryAfter:  opts.unaryGetRetryAfter,
-		streamGetRetryAfter: opts.streamGetRetryAfter,
+		processor:              processor,
+		unaryGetKey:            opts.unaryGetKey,
+		streamGetKey:           opts.streamGetKey,
+		unaryOnReject:          opts.unaryOnReject,
+		unaryOnRejectInDryRun:  opts.unaryOnRejectInDryRun,
+		streamOnReject:         opts.streamOnReject,
+		streamOnRejectInDryRun: opts.streamOnRejectInDryRun,
+		unaryOnError:           opts.unaryOnError,
+		streamOnError:          opts.streamOnError,
+		unaryGetRetryAfter:     opts.unaryGetRetryAfter,
+		streamGetRetryAfter:    opts.streamGetRetryAfter,
 	}, nil
 }
 
@@ -308,6 +312,12 @@ func (rh *unaryInFlightLimitRequestHandler) Execute() error {
 func (rh *unaryInFlightLimitRequestHandler) OnReject(params inflightlimit.Params) error {
 	var handlerErr error
 	rh.result, handlerErr = rh.parent.unaryOnReject(rh.ctx, rh.req, rh.info, rh.handler, rh.convertParams(params))
+	return handlerErr
+}
+
+func (rh *unaryInFlightLimitRequestHandler) OnRejectInDryRun(params inflightlimit.Params) error {
+	var handlerErr error
+	rh.result, handlerErr = rh.parent.unaryOnRejectInDryRun(rh.ctx, rh.req, rh.info, rh.handler, rh.convertParams(params))
 	return handlerErr
 }
 
@@ -351,6 +361,10 @@ func (rh *streamInFlightLimitRequestHandler) Execute() error {
 
 func (rh *streamInFlightLimitRequestHandler) OnReject(params inflightlimit.Params) error {
 	return rh.parent.streamOnReject(rh.srv, rh.ss, rh.info, rh.handler, rh.convertParams(params))
+}
+
+func (rh *streamInFlightLimitRequestHandler) OnRejectInDryRun(params inflightlimit.Params) error {
+	return rh.parent.streamOnRejectInDryRun(rh.srv, rh.ss, rh.info, rh.handler, rh.convertParams(params))
 }
 
 func (rh *streamInFlightLimitRequestHandler) OnError(params inflightlimit.Params, err error) error {
@@ -484,30 +498,4 @@ func DefaultInFlightLimitStreamOnRejectInDryRun(
 		)
 	}
 	return handler(srv, ss)
-}
-
-func makeInFlightLimitUnaryOnRejectFunc(opts *inFlightLimitOptions) InFlightLimitUnaryOnRejectFunc {
-	if opts.dryRun {
-		if opts.unaryOnRejectInDryRun != nil {
-			return opts.unaryOnRejectInDryRun
-		}
-		return DefaultInFlightLimitUnaryOnRejectInDryRun
-	}
-	if opts.unaryOnReject != nil {
-		return opts.unaryOnReject
-	}
-	return DefaultInFlightLimitUnaryOnReject
-}
-
-func makeInFlightLimitStreamOnRejectFunc(opts *inFlightLimitOptions) InFlightLimitStreamOnRejectFunc {
-	if opts.dryRun {
-		if opts.streamOnRejectInDryRun != nil {
-			return opts.streamOnRejectInDryRun
-		}
-		return DefaultInFlightLimitStreamOnRejectInDryRun
-	}
-	if opts.streamOnReject != nil {
-		return opts.streamOnReject
-	}
-	return DefaultInFlightLimitStreamOnReject
 }
