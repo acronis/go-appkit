@@ -11,9 +11,49 @@ grpcServer:
   log:
     callStart: false
     slowCallThreshold: 1s
+
 metricsServer:
   address: ":9090"
+
 log:
   level: info
   format: json
   output: stdout
+
+throttle:
+  rateLimitZones:
+    # Rate limiting by client-id header
+    rl_client_id:
+      key:
+        type: header
+        headerName: client-id
+      rateLimit: 10/s   # Allow 10 requests per second per client
+      burstLimit: 5     # Allow burst of 5 requests
+      maxKeys: 1000     # Track up to 1000 different clients
+      dryRun: false
+
+  inFlightLimitZones:
+    # Global in-flight limiting (no key - applies to entire service)
+    ifl_global:
+      inFlightLimit: 1000  # Max 1000 concurrent requests globally
+      dryRun: false
+    
+    # In-flight limiting by remote address
+    ifl_remote_addr:
+      key:
+        type: remote_addr
+      inFlightLimit: 100   # Max 100 concurrent requests per client IP
+      maxKeys: 500        # Track up to 500 different IPs
+      backlogLimit: 50     # Queue up to 50 requests when limit exceeded
+      backlogTimeout: 3s  # Wait up to 3 seconds in queue
+      dryRun: false
+
+  rules:
+    - alias: "echo-service-throttling"
+      serviceMethods:
+        - "/echo_service.EchoService/*"  # Apply to all Echo service methods
+      rateLimits:
+        - zone: rl_client_id
+      inFlightLimits:
+        - zone: ifl_global
+        - zone: ifl_remote_addr
