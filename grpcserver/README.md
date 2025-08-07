@@ -50,6 +50,7 @@ func main () {
 ## Documentation
 
 - [Interceptors](interceptor/README.md) - Logging, metrics, recovery, throttling, and request ID interceptors
+- [Configurable Throttling](interceptor/throttle/README.md) - Interceptors for gRPC throttling that can be flexible configured from YAML/JSON files
 - [Echo Service Example](examples/echo-service/README.md) - Complete working example with testing instructions
 
 ## Configuration

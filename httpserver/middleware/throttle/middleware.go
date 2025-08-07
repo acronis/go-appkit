@@ -16,6 +16,7 @@ import (
 	"github.com/vasayxtx/go-glob"
 
 	"github.com/acronis/go-appkit/httpserver/middleware"
+	"github.com/acronis/go-appkit/internal/throttleconfig"
 	"github.com/acronis/go-appkit/log"
 	"github.com/acronis/go-appkit/restapi"
 )
@@ -150,7 +151,7 @@ func makeRoutes(
 			continue
 		}
 
-		if len(opts.Tags) != 0 && !checkStringSlicesIntersect(opts.Tags, rule.Tags) {
+		if len(opts.Tags) != 0 && !throttleconfig.CheckStringSlicesIntersect(opts.Tags, rule.Tags) {
 			continue
 		}
 
@@ -458,15 +459,4 @@ func makeGetKeyFunc(
 		return makeWithPredefinedKeys(excludedKeys, true), nil
 	}
 	return makeWithPredefinedKeys(includedKeys, false), nil
-}
-
-func checkStringSlicesIntersect(slice1, slice2 []string) bool {
-	for i := range slice1 {
-		for j := range slice2 {
-			if slice1[i] == slice2[j] {
-				return true
-			}
-		}
-	}
-	return false
 }

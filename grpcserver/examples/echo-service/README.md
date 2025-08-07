@@ -12,9 +12,14 @@ The service also includes:
 - Health check endpoint
 - gRPC reflection for debugging
 - Prometheus metrics collection
-- Structured logging
+- Structured access logging
+- Throttling
+  - Rate limiting per client
+  - Concurrent request limiting (in-flight limiting)
+  - Configurable burst and backlog limits
+  - Dry-run mode for testing
 
-Configuration is read from the `config.yml` file, which allows you to customize server settings such as address, timeouts, and logging options.
+Configuration is read from the `config.yml` file, which allows you to customize server settings including logging and throttling rules and limit.
 
 ## Starting the service
 
@@ -81,13 +86,94 @@ Log:
 The service automatically collects metrics for:
 - gRPC call duration histograms
 - Number of calls in flight
+- **Throttling metrics** - Rate limiting and in-flight limiting rejections
 
 Access the metrics endpoint with:
 
 ```bash
-curl localhost:9090
+curl localhost:9090/metrics
 ```
 
 This returns Prometheus-format metrics including:
 - `grpc_call_duration_seconds` - Histogram of gRPC call durations
 - `grpc_calls_in_flight` - Current number of gRPC calls being served
+- `grpc_rate_limit_rejects_total` - Counter of requests rejected due to rate limits
+- `grpc_in_flight_limit_rejects_total` - Counter of requests rejected due to in-flight limits
+
+## Throttling Functionality
+
+The echo service demonstrates the throttling capabilities of the `grpcserver/interceptor/throttle` package with **3 simple limitings**:
+
+### 1. Global In-Flight Limiting
+Controls the total number of concurrent requests across the entire service (max 1000 concurrent requests globally).
+
+### 2. Rate Limiting by Client ID Header
+Rate limits requests based on the `client-id` header:
+- 10 requests per second per client ID
+- Burst of 5 requests allowed
+- Tracks up to 1000 different client IDs
+
+### 3. In-Flight Limiting by Remote Address  
+Limits concurrent requests per client IP address:
+- Max 100 concurrent requests per IP
+- Backlog queue: up to 50 requests wait up to 3 seconds
+- Tracks up to 500 different IP addresses
+
+### Single Throttling Rule
+
+All 3 throttling mechanisms are applied to **all Echo service methods** (`/echo_service.EchoService/*`) through a single rule named `echo-service-throttling`.
+
+### Testing Throttling
+
+Send requests with different `client-id` headers to test header-based rate limiting:
+
+```bash
+# Client "mobile-app" - should work (within 10/sec limit)
+for i in {1..15}; do
+  echo "Request $i for mobile-app"
+  grpcurl -H "client-id: mobile-app" \
+    -d '{"payload":"test"}' -plaintext localhost:50051 echo_service.EchoService/Echo
+  sleep 0.1  # Small delay to avoid hitting rate limit too fast
+done
+
+# Test burst limit - send 15 requests quickly (part of them should be throttled)
+echo "Testing burst limit for client desktop-app:"
+for i in {1..15}; do
+  grpcurl -H "client-id: desktop-app" \
+    -d '{"payload":"burst-test"}' -plaintext localhost:50051 echo_service.EchoService/Echo &
+done
+wait
+```
+
+#### Monitor Throttling in Logs
+
+When throttling occurs, you'll see log entries like:
+
+```json
+{"level":"warn","msg":"rate limit exceeded","rate_limit_key":"mobile-app"}
+{"level":"info","msg":"gRPC call finished in 0.000s","grpc_code":"ResourceExhaust"}
+```
+
+The `RESOURCE_EXHAUSTED` status indicates throttling was applied.
+
+### Monitoring Throttling Metrics
+
+After triggering throttling, you can observe the metrics:
+
+```bash
+# Check throttling metrics
+curl -s localhost:9090/metrics | grep -E "(rate_limit_rejects|in_flight_limit_rejects)"
+```
+
+Example output after throttling:
+```
+grpc_rate_limit_rejects_total{dry_run="no",rule="echo-service-throttling"} 6
+grpc_in_flight_limit_rejects_total{backlogged="no",dry_run="no",rule="echo-service-throttling"} 2
+```
+
+### Dry Run Mode
+
+For testing, you can enable dry-run mode in `config.yml` by setting `dryRun: true` in any zone. This will:
+- Log throttling decisions without actually blocking requests
+- Allow you to see what would be throttled in production
+- Useful for capacity planning and testing

@@ -1,5 +1,5 @@
 /*
-Copyright © 2024 Acronis International GmbH.
+Copyright © 2025 Acronis International GmbH.
 
 Released under MIT license.
 */
@@ -8,14 +8,12 @@ package throttle
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/internal/throttleconfig"
-	"github.com/acronis/go-appkit/restapi"
 )
 
 // Rate-limiting algorithms.
@@ -31,7 +29,7 @@ type ZoneKeyType = throttleconfig.ZoneKeyType
 const (
 	ZoneKeyTypeNoKey      = throttleconfig.ZoneKeyTypeNoKey
 	ZoneKeyTypeIdentity   = throttleconfig.ZoneKeyTypeIdentity
-	ZoneKeyTypeHTTPHeader = throttleconfig.ZoneKeyTypeHeader
+	ZoneKeyTypeHeader     = throttleconfig.ZoneKeyTypeHeader
 	ZoneKeyTypeRemoteAddr = throttleconfig.ZoneKeyTypeRemoteAddr
 )
 
@@ -53,7 +51,7 @@ type RateLimitValue = throttleconfig.RateLimitValue
 // TagsList represents a list of tags.
 type TagsList = throttleconfig.TagsList
 
-// Config represents a configuration for throttling of HTTP requests on the server side.
+// Config represents a configuration for throttling of gRPC requests on the server side.
 // Configuration can be loaded in different formats (YAML, JSON) using config.Loader, viper,
 // or with json.Unmarshal/yaml.Unmarshal functions directly.
 type Config struct {
@@ -66,8 +64,8 @@ type Config struct {
 	InFlightLimitZones map[string]InFlightLimitZoneConfig `mapstructure:"inFlightLimitZones" yaml:"inFlightLimitZones" json:"inFlightLimitZones"` //nolint:lll
 
 	// Rules contains list of so-called throttling rules.
-	// Basically, throttling rule represents a route (or multiple routes),
-	// and rate/in-flight limiting zones based on which all matched HTTP requests will be throttled.
+	// Basically, throttling rule represents a gRPC service/method pattern,
+	// and rate/in-flight limiting zones based on which all matched gRPC requests will be throttled.
 	Rules []RuleConfig `mapstructure:"rules" yaml:"rules" json:"rules"`
 
 	keyPrefix string
@@ -98,13 +96,6 @@ func NewConfig(options ...ConfigOption) *Config {
 		opt(&opts)
 	}
 	return &Config{keyPrefix: opts.keyPrefix}
-}
-
-// NewConfigWithKeyPrefix creates a new instance of the Config with a key prefix.
-// This prefix will be used by config.Loader.
-// Deprecated: use NewConfig with WithKeyPrefix instead.
-func NewConfigWithKeyPrefix(keyPrefix string) *Config {
-	return &Config{keyPrefix: keyPrefix}
 }
 
 // KeyPrefix returns a key prefix with which all configuration parameters should be presented.
@@ -151,21 +142,17 @@ func (c *Config) Validate() error {
 
 // ZoneConfig represents a basic zone configuration.
 type ZoneConfig struct {
-	Key                ZoneKeyConfig `mapstructure:"key" yaml:"key" json:"key"`
-	MaxKeys            int           `mapstructure:"maxKeys" yaml:"maxKeys" json:"maxKeys"`
-	ResponseStatusCode int           `mapstructure:"responseStatusCode" yaml:"responseStatusCode" json:"responseStatusCode"`
-	DryRun             bool          `mapstructure:"dryRun" yaml:"dryRun" json:"dryRun"`
-	IncludedKeys       []string      `mapstructure:"includedKeys" yaml:"includedKeys" json:"includedKeys"`
-	ExcludedKeys       []string      `mapstructure:"excludedKeys" yaml:"excludedKeys" json:"excludedKeys"`
+	Key          ZoneKeyConfig `mapstructure:"key" yaml:"key" json:"key"`
+	MaxKeys      int           `mapstructure:"maxKeys" yaml:"maxKeys" json:"maxKeys"`
+	DryRun       bool          `mapstructure:"dryRun" yaml:"dryRun" json:"dryRun"`
+	IncludedKeys []string      `mapstructure:"includedKeys" yaml:"includedKeys" json:"includedKeys"`
+	ExcludedKeys []string      `mapstructure:"excludedKeys" yaml:"excludedKeys" json:"excludedKeys"`
 }
 
 // Validate validates zone configuration.
 func (c *ZoneConfig) Validate() error {
 	if err := c.Key.Validate(); err != nil {
 		return err
-	}
-	if c.ResponseStatusCode < 0 {
-		return fmt.Errorf("response status code should be >= 0, got %d", c.ResponseStatusCode)
 	}
 	if c.MaxKeys < 0 {
 		return fmt.Errorf("maximum keys should be >= 0, got %d", c.MaxKeys)
@@ -174,16 +161,6 @@ func (c *ZoneConfig) Validate() error {
 		return fmt.Errorf("included and excluded lists cannot be specified at the same time")
 	}
 	return nil
-}
-
-func (c *ZoneConfig) getResponseStatusCode() int {
-	if c.ResponseStatusCode != 0 {
-		return c.ResponseStatusCode
-	}
-	if c.Key.Type == ZoneKeyTypeIdentity {
-		return http.StatusTooManyRequests
-	}
-	return http.StatusServiceUnavailable
 }
 
 // RateLimitZoneConfig represents zone configuration for rate limiting.
@@ -245,22 +222,14 @@ type RuleConfig struct {
 	// Alias is an alternative name for the rule. It will be used as a label in metrics.
 	Alias string `mapstructure:"alias" yaml:"alias" json:"alias"`
 
-	// Routes contains a list of routes (HTTP verb + URL path) for which the rule will be applied.
-	Routes []restapi.RouteConfig `mapstructure:"routes" yaml:"routes" json:"routes"`
+	// ServiceMethods contains a list of gRPC service methods for which the rule will be applied.
+	// Patterns like "/package.Service/Method" or "/package.Service/*" are supported.
+	ServiceMethods []string `mapstructure:"serviceMethods" yaml:"serviceMethods" json:"serviceMethods"`
 
-	// ExcludedRoutes contains list of routes (HTTP verb + URL path) to be excluded from throttling limitations.
-	// The following service endpoints fit should typically be added to this list:
-	// - healthcheck endpoint serving as readiness probe
-	// - status endpoint serving as liveness probe
-	ExcludedRoutes []restapi.RouteConfig `mapstructure:"excludedRoutes" yaml:"excludedRoutes" json:"excludedRoutes"`
+	// ExcludedServiceMethods contains list of gRPC service methods to be excluded from throttling limitations.
+	ExcludedServiceMethods []string `mapstructure:"excludedServiceMethods" yaml:"excludedServiceMethods" json:"excludedServiceMethods"`
 
-	// Tags is useful when the different rules of the same config should be used by different middlewares.
-	// As example let's suppose we would like to have 2 different throttling rules:
-	// 1) for absolutely all requests;
-	// 2) for all identity-aware (authorized) requests.
-	// In the code, we will have 2 middlewares that will be executed on the different steps of the HTTP request serving,
-	// and each one should do only its own throttling.
-	// We can achieve this using different tags for rules and passing needed tag in the MiddlewareOpts.
+	// Tags is useful when the different rules of the same config should be used by different interceptors.
 	Tags TagsList `mapstructure:"tags" yaml:"tags" json:"tags"`
 
 	// RateLimits contains a list of the rate limiting zones that are used in the rule.
@@ -275,11 +244,7 @@ func (c *RuleConfig) Name() string {
 	if c.Alias != "" {
 		return c.Alias
 	}
-	parts := make([]string, 0, len(c.Routes))
-	for _, r := range c.Routes {
-		parts = append(parts, strings.TrimSpace(strings.Join(r.Methods, "|")+" "+r.Path.Raw))
-	}
-	return strings.Join(parts, "; ")
+	return strings.Join(c.ServiceMethods, "; ")
 }
 
 // Validate validates throttling rule configuration.
@@ -297,23 +262,34 @@ func (c *RuleConfig) Validate(
 		}
 	}
 
-	if len(c.Routes) == 0 {
-		return fmt.Errorf("routes is missing")
+	if len(c.ServiceMethods) == 0 {
+		return fmt.Errorf("serviceMethods is missing")
 	}
 
-	for i := range c.Routes {
-		err := c.Routes[i].Validate()
-		if err != nil {
-			return fmt.Errorf("validate route #%d: %w", i+1, err)
-		}
-	}
-	for i := range c.ExcludedRoutes {
-		err := c.ExcludedRoutes[i].Validate()
-		if err != nil {
-			return fmt.Errorf("validate excluded route #%d: %w", i+1, err)
+	for _, method := range c.ServiceMethods {
+		if err := validateServiceMethodPattern(method); err != nil {
+			return fmt.Errorf("serviceMethod %q %w", method, err)
 		}
 	}
 
+	for _, method := range c.ExcludedServiceMethods {
+		if err := validateServiceMethodPattern(method); err != nil {
+			return fmt.Errorf("excludedServiceMethod %q %w", method, err)
+		}
+	}
+
+	return nil
+}
+
+// validateServiceMethodPattern validates that a gRPC service method pattern is valid.
+func validateServiceMethodPattern(method string) error {
+	wildcardCount := strings.Count(method, "*")
+	if wildcardCount > 1 {
+		return fmt.Errorf("contains multiple wildcards or non-trailing wildcard")
+	}
+	if wildcardCount == 1 && !strings.HasSuffix(method, "*") {
+		return fmt.Errorf("contains multiple wildcards or non-trailing wildcard")
+	}
 	return nil
 }
 

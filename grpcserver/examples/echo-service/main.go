@@ -14,6 +14,7 @@ import (
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/grpcserver"
 	"github.com/acronis/go-appkit/grpcserver/examples/echo-service/pb"
+	"github.com/acronis/go-appkit/grpcserver/interceptor/throttle"
 	"github.com/acronis/go-appkit/httpserver"
 	"github.com/acronis/go-appkit/log"
 	"github.com/acronis/go-appkit/service"
@@ -37,8 +38,8 @@ func runApp() error {
 
 	var serviceUnits []service.Unit
 
-	// Create gRPC server with health check and reflection
-	grpcServer, err := makeGRPCServer(cfg.Server, logger)
+	// Create gRPC server with health check, reflection, and throttling
+	grpcServer, err := makeGRPCServer(cfg.Server, cfg.Throttle, logger)
 	if err != nil {
 		return err
 	}
@@ -51,9 +52,27 @@ func runApp() error {
 	return service.New(logger, service.NewCompositeUnit(serviceUnits...)).Start()
 }
 
-func makeGRPCServer(cfg *grpcserver.Config, logger log.FieldLogger) (*grpcserver.GRPCServer, error) {
-	// Create gRPC server with logging and metrics
-	grpcServer, err := grpcserver.New(cfg, logger)
+func makeGRPCServer(cfg *grpcserver.Config, throttleCfg *throttle.Config, logger log.FieldLogger) (*grpcserver.GRPCServer, error) {
+	// Create and register Prometheus metrics for throttling
+	throttleMetrics := throttle.NewPrometheusMetrics()
+	throttleMetrics.MustRegister()
+
+	// Create throttling interceptors with metrics collection
+	unaryThrottleInterceptor, err := throttle.UnaryInterceptor(throttleCfg,
+		throttle.WithUnaryMetricsCollector(throttleMetrics))
+	if err != nil {
+		return nil, fmt.Errorf("create unary throttle interceptor: %w", err)
+	}
+	streamThrottleInterceptor, err := throttle.StreamInterceptor(throttleCfg,
+		throttle.WithStreamMetricsCollector(throttleMetrics))
+	if err != nil {
+		return nil, fmt.Errorf("create stream throttle interceptor: %w", err)
+	}
+
+	// Create gRPC server with logging, metrics, and throttling
+	grpcServer, err := grpcserver.New(cfg, logger,
+		grpcserver.WithUnaryInterceptors(unaryThrottleInterceptor),
+		grpcserver.WithStreamInterceptors(streamThrottleInterceptor))
 	if err != nil {
 		return nil, fmt.Errorf("create gRPC server: %w", err)
 	}
@@ -81,6 +100,7 @@ type AppConfig struct {
 	Server        *grpcserver.Config
 	Log           *log.Config
 	MetricsServer *httpserver.Config
+	Throttle      *throttle.Config
 }
 
 func NewAppConfig() *AppConfig {
@@ -88,6 +108,7 @@ func NewAppConfig() *AppConfig {
 		Server:        grpcserver.NewConfig(),
 		Log:           log.NewConfig(),
 		MetricsServer: httpserver.NewConfig(httpserver.WithKeyPrefix("metricsServer")),
+		Throttle:      throttle.NewConfig(throttle.WithKeyPrefix("throttle")),
 	}
 }
 
