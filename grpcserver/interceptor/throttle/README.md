@@ -4,16 +4,12 @@ The package provides comprehensive throttling for gRPC services with both rate l
 
 The throttling is implemented as standard gRPC interceptors and can be configured from code or from JSON/YAML configuration files.
 
-Please see [testable examples](#examples) to understand how to configure and use the interceptors.
+See complete working example of using configurable gRPC throttling in the [Echo Service Example](./../../examples/echo-service).
 
 ## Features
 
-### Dual Throttling Types
-1. **Rate Limiting**: Controls the frequency of requests over time using leaky bucket or sliding window algorithms
-2. **In-Flight Limiting**: Controls the number of concurrent requests being processed
-
-### Key Capabilities
-- **Multiple Rate Limiting Algorithms**: Leaky bucket (with burst support) and sliding window
+- **Rate Limiting**: Controls the frequency of requests over time using leaky bucket (with burst support) or sliding window algorithms
+- **In-Flight Limiting**: Controls the number of concurrent requests being processed
 - **Flexible Key Extraction**: Global, per-client IP, per-header value, or custom identity-based throttling
 - **Service Method Patterns**: Support for exact matches and wildcard patterns (`/package.Service/*`)
 - **Request Backlogging**: Queue requests when limits are reached with configurable timeouts

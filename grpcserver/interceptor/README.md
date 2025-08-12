@@ -2,6 +2,8 @@
 
 A collection of gRPC interceptors for logging, metrics collection, panic recovery, request ID handling, rate limiting, and in-flight limiting. These interceptors enhance gRPC services with observability, reliability, and traffic control features.
 
+See complete working example of using these interceptors in the [Echo Service Example](./../examples/echo-service).
+
 ## Table of Contents
 
 - [Available Interceptors](#available-interceptors)
