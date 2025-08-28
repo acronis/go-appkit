@@ -37,6 +37,9 @@ type Opts struct {
 	// UserAgent is a user agent string.
 	UserAgent string
 
+	// AuthProvider provides auth information used for bearer authorization.
+	AuthProvider AuthProvider
+
 	// ClientType represents a type of client, it's a service component reference. e.g. 'auth-service'.
 	ClientType string
 
@@ -82,6 +85,12 @@ func NewWithOpts(cfg *Config, opts Opts) (*http.Client, error) {
 
 	if opts.UserAgent != "" {
 		delegate = NewUserAgentRoundTripper(delegate, opts.UserAgent)
+	}
+
+	if opts.AuthProvider != nil {
+		delegate = NewAuthBearerRoundTripperWithOpts(delegate, opts.AuthProvider, AuthBearerRoundTripperOpts{
+			LoggerProvider: opts.LoggerProvider,
+		})
 	}
 
 	delegate = NewRequestIDRoundTripperWithOpts(delegate, RequestIDRoundTripperOpts{
