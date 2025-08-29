@@ -279,7 +279,15 @@ func (e *RetryableRoundTripperError) Unwrap() error {
 	return e.Inner
 }
 
-// DefaultCheckRetry represents default function to determine either retry is needed or not.
+// DefaultCheckRetry determines whether the request should be retried.
+// Retry policy:
+//   - Network/transport error: retry if error is temporary (see CheckErrorIsTemporary).
+//   - HTTP 429 Too Many Requests: always retry regardless of method. This status is usually a
+//     signal from the server that the request was rejected before it was processed due
+//     to rate limiting.
+//   - HTTP 5xx and 408: retry only for clearly idempotent methods (GET/HEAD/OPTIONS)
+//     or when the request context carries the idempotent hint set via
+//     NewContextWithIdempotentHint(ctx, true).
 func DefaultCheckRetry(
 	ctx context.Context, resp *http.Response, roundTripErr error, doneRetryAttempts int,
 ) (needRetry bool, err error) {
@@ -289,7 +297,16 @@ func DefaultCheckRetry(
 	if resp == nil {
 		return false, fmt.Errorf("both response and round trip error are nil")
 	}
-	return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError, nil
+	switch resp.StatusCode {
+	case 429:
+		return true, nil
+	case 500, 502, 503, 504, 408:
+		if resp.Request.Method == http.MethodGet || resp.Request.Method == http.MethodHead ||
+			resp.Request.Method == http.MethodOptions || GetIdempotentHintFromContext(ctx) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // DefaultBackoffPolicy is a default backoff policy.
