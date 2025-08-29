@@ -14,6 +14,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
 )
 
 const (
@@ -127,7 +129,7 @@ func NewPrometheusMetrics(opts ...PrometheusOption) *PrometheusMetrics {
 			Name:        "grpc_call_duration_seconds",
 			Help:        "A histogram of the gRPC call durations.",
 			Buckets:     config.durationBuckets,
-			ConstLabels: config.constLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(config.constLabels),
 		},
 		makeLabelNames(
 			callMetricsLabelService,
@@ -143,7 +145,7 @@ func NewPrometheusMetrics(opts ...PrometheusOption) *PrometheusMetrics {
 			Namespace:   config.namespace,
 			Name:        "grpc_calls_in_flight",
 			Help:        "Current number of gRPC calls being served.",
-			ConstLabels: config.constLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(config.constLabels),
 		},
 		makeLabelNames(
 			callMetricsLabelService,

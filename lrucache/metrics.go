@@ -6,7 +6,11 @@ Released under MIT license.
 
 package lrucache
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
+)
 
 // MetricsCollector represents a collector of metrics to analyze how (effectively or not) cache is used.
 type MetricsCollector interface {
@@ -59,7 +63,7 @@ func NewPrometheusMetricsWithOpts(opts PrometheusMetricsOpts) *PrometheusMetrics
 			Namespace:   opts.Namespace,
 			Name:        "cache_entries_amount",
 			Help:        "Total number of entries in the cache.",
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		opts.CurriedLabelNames,
 	)
@@ -69,7 +73,7 @@ func NewPrometheusMetricsWithOpts(opts PrometheusMetricsOpts) *PrometheusMetrics
 			Namespace:   opts.Namespace,
 			Name:        "cache_hits_total",
 			Help:        "Number of successfully found keys in the cache.",
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		opts.CurriedLabelNames,
 	)
@@ -79,7 +83,7 @@ func NewPrometheusMetricsWithOpts(opts PrometheusMetricsOpts) *PrometheusMetrics
 			Namespace:   opts.Namespace,
 			Name:        "cache_misses_total",
 			Help:        "Number of not found keys in cache.",
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		opts.CurriedLabelNames,
 	)
@@ -89,7 +93,7 @@ func NewPrometheusMetricsWithOpts(opts PrometheusMetricsOpts) *PrometheusMetrics
 			Namespace:   opts.Namespace,
 			Name:        "cache_evictions_total",
 			Help:        "Number of evicted entries.",
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		opts.CurriedLabelNames,
 	)

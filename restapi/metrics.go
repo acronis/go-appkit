@@ -6,7 +6,11 @@ Released under MIT license.
 
 package restapi
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
+)
 
 var metricsResponseErrors *prometheus.CounterVec
 
@@ -24,6 +28,9 @@ func MustInitAndRegisterMetrics(namespace string) {
 		Subsystem: metricsSubsystem,
 		Name:      "response_errors",
 		Help:      "The total number of REST API errors that were respond.",
+		ConstLabels: prometheus.Labels{
+			libinfo.PrometheusLibVersionLabel: libinfo.GetLibVersion(),
+		},
 	}, []string{metricsLabelResponseErrorDomain, metricsLabelResponseErrorCode})
 	prometheus.MustRegister(metricsResponseErrors)
 }

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
 )
 
 const (
@@ -96,7 +98,7 @@ func NewHTTPRequestPrometheusMetricsWithOpts(opts HTTPRequestPrometheusMetricsOp
 			Name:        "http_request_duration_seconds",
 			Help:        "A histogram of the HTTP request durations.",
 			Buckets:     durBuckets,
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		makeLabelNames(
 			httpRequestMetricsLabelMethod,
@@ -111,7 +113,7 @@ func NewHTTPRequestPrometheusMetricsWithOpts(opts HTTPRequestPrometheusMetricsOp
 			Namespace:   opts.Namespace,
 			Name:        "http_requests_in_flight",
 			Help:        "Current number of HTTP requests being served.",
-			ConstLabels: opts.ConstLabels,
+			ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 		},
 		makeLabelNames(
 			httpRequestMetricsLabelMethod,
