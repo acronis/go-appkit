@@ -500,3 +500,71 @@ func TestRetryableRoundTripper_RoundTrip_Logging(t *testing.T) {
 		doRequestAndCheckLogs(t, &http.Client{Transport: rt}, req, logRecorder)
 	})
 }
+
+func TestRetryableRoundTripper_RoundTrip_IdempotentFlag(t *testing.T) {
+	testSrv := newTestServerForRetryableRoundTripper()
+	defer testSrv.Close()
+
+	reqBodyJSON := []byte(`{"field1":"ultimate_answer_field","field2":42}`)
+
+	t.Run("POST_500_no_retry_without_hint", func(t *testing.T) {
+		countingRT := &countingRoundTripper{delegate: http.DefaultTransport}
+		retryableRT, err := NewRetryableRoundTripperWithOpts(countingRT, RetryableRoundTripperOpts{
+			MaxRetryAttempts: 3,
+			BackoffPolicy:    retry.NewConstantBackoffPolicy(time.Millisecond*10, 0),
+		})
+		require.NoError(t, err)
+		httpClient := &http.Client{Transport: retryableRT, Timeout: 30 * time.Second}
+
+		// Single 500, should not retry for POST without idempotent flag
+		testSrv.Reset([]int{http.StatusInternalServerError})
+
+		req, reqErr := http.NewRequest(http.MethodPost, testSrv.URL, bytes.NewReader(reqBodyJSON))
+		require.NoError(t, reqErr)
+
+		resp, respErr := httpClient.Do(req)
+		require.NoError(t, respErr)
+		require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		require.NoError(t, resp.Body.Close())
+
+		require.Equal(t, 1, countingRT.reqsNum)
+		require.Equal(t, []reqInfo{{method: http.MethodPost, body: reqBodyJSON}}, testSrv.ReqInfos())
+	})
+
+	t.Run("POST_500_retries_with_idempotent_flag", func(t *testing.T) {
+		countingRT := &countingRoundTripper{delegate: http.DefaultTransport}
+		retryableRT, err := NewRetryableRoundTripperWithOpts(countingRT, RetryableRoundTripperOpts{
+			MaxRetryAttempts: 3,
+			BackoffPolicy:    retry.NewConstantBackoffPolicy(time.Millisecond*10, 0),
+		})
+		require.NoError(t, err)
+		httpClient := &http.Client{Transport: retryableRT, Timeout: 30 * time.Second}
+
+		// Prepare 3x 500 followed by 200 OK (note: server pops from the tail)
+		respCodes := []int{http.StatusOK, http.StatusInternalServerError, http.StatusInternalServerError, http.StatusInternalServerError}
+		testSrv.Reset(respCodes)
+
+		req, reqErr := http.NewRequest(http.MethodPost, testSrv.URL, bytes.NewReader(reqBodyJSON))
+		require.NoError(t, reqErr)
+		req = req.WithContext(NewContextWithIdempotentHint(req.Context(), true))
+
+		resp, respErr := httpClient.Do(req)
+		require.NoError(t, respErr)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.NoError(t, resp.Body.Close())
+
+		require.Equal(t, 4, countingRT.reqsNum)
+		// Expect 4 requests recorded, with retry attempt headers for attempts > 0
+		reqInfos := testSrv.ReqInfos()
+		require.Len(t, reqInfos, 4)
+		for i, info := range reqInfos {
+			require.Equal(t, http.MethodPost, info.method)
+			require.Equal(t, reqBodyJSON, info.body)
+			if i == 0 {
+				require.Equal(t, "", info.retryAttemptHeader)
+			} else {
+				require.Equal(t, strconv.Itoa(i), info.retryAttemptHeader)
+			}
+		}
+	})
+}
