@@ -143,7 +143,7 @@ func TestMustHTTPClientWithOptsRoundTripperPolicy(t *testing.T) {
 		UserAgent:  "test-agent",
 		ClientType: "test-client-type",
 	})
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
+	req, err := http.NewRequestWithContext(NewContextWithIdempotentHint(context.Background(), true), http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
 
 	r, err := client.Do(req)
