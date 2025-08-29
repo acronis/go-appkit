@@ -7,7 +7,6 @@ Released under MIT license.
 package httpclient
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -94,7 +93,7 @@ type RetryableRoundTripperOpts struct {
 	// By default, DefaultMaxRetryAttempts const is used.
 	MaxRetryAttempts int
 
-	// CheckRetry is called right after RoundTrip() method and determines if the next retry attempt is needed.
+	// CheckRetryFunc is called right after RoundTrip() method and determines if the next retry attempt is needed.
 	// By default, DefaultCheckRetry function is used.
 	CheckRetryFunc CheckRetryFunc
 
@@ -185,7 +184,7 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 
 		// Discard and close response body before next retry.
 		if resp != nil && roundTripErr == nil {
-			rt.drainResponseBody(reqCtx, resp)
+			drainResponseBody(resp, rt.logger(reqCtx))
 		}
 
 		if curRetryAttemptNum > 0 {
@@ -246,17 +245,6 @@ func (rt *RetryableRoundTripper) makeNextWaitTimeProvider() waitTimeProvider {
 	}
 }
 
-func (rt *RetryableRoundTripper) drainResponseBody(ctx context.Context, resp *http.Response) {
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			rt.logger(ctx).Error("failed to close previous response body between retry attempts", log.Error(closeErr))
-		}
-	}()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		rt.logger(ctx).Error("failed to discard previous response body between retry attempts", log.Error(err))
-	}
-}
-
 func (rt *RetryableRoundTripper) logger(ctx context.Context) log.FieldLogger {
 	if rt.LoggerProvider != nil {
 		return rt.LoggerProvider(ctx)
@@ -309,33 +297,6 @@ func CheckErrorIsTemporary(err error) bool {
 	var terr interface{ Temporary() bool }
 	ok := errors.As(err, &terr)
 	return ok && terr.Temporary()
-}
-
-func makeRequestBodyRewindable(req *http.Request) (func(*http.Request) error, error) {
-	if reqBodySeeker, ok := req.Body.(io.ReadSeeker); ok {
-		reqBodySeekOffset, err := reqBodySeeker.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return nil, fmt.Errorf("seek request body before doing first request: %w", err)
-		}
-		req.Body = io.NopCloser(req.Body)
-		return func(r *http.Request) (err error) {
-			_, err = reqBodySeeker.Seek(reqBodySeekOffset, io.SeekStart)
-			if err != nil {
-				return fmt.Errorf(
-					"seek request body (offset=%d, whence=%d): %w", reqBodySeekOffset, io.SeekStart, err)
-			}
-			return nil
-		}, nil
-	}
-
-	bufferedReqBody, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read all requesty body before doing first request: %w", err)
-	}
-	return func(r *http.Request) error {
-		r.Body = io.NopCloser(bytes.NewReader(bufferedReqBody))
-		return nil
-	}, nil
 }
 
 func parseRetryAfterFromResponse(resp *http.Response) (retryAfter time.Duration, ok bool) {
