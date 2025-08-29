@@ -8,6 +8,8 @@ package throttleconfig
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
 )
 
 const (
@@ -69,7 +71,7 @@ func NewPrometheusMetricsWithOpts(subsystem string, opts PrometheusMetricsOpts) 
 		Subsystem:   subsystem,
 		Name:        "in_flight_limit_rejects_total",
 		Help:        "Number of rejected requests due to in-flight limit exceeded.",
-		ConstLabels: opts.ConstLabels,
+		ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 	}, makeLabelNames(metricsLabelDryRun, metricsLabelRule, metricsLabelBacklogged))
 
 	rateLimitRejects := prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -77,7 +79,7 @@ func NewPrometheusMetricsWithOpts(subsystem string, opts PrometheusMetricsOpts) 
 		Subsystem:   subsystem,
 		Name:        "rate_limit_rejects_total",
 		Help:        "Number of rejected requests due to rate limit exceeded.",
-		ConstLabels: opts.ConstLabels,
+		ConstLabels: libinfo.AddPrometheusLibVersionLabel(opts.ConstLabels),
 	}, makeLabelNames(metricsLabelDryRun, metricsLabelRule))
 
 	return &PrometheusMetrics{

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/acronis/go-appkit/internal/libinfo"
 )
 
 // MetricsCollector is an interface for collecting metrics for client requests.
@@ -35,6 +37,9 @@ func NewPrometheusMetricsCollector(namespace string) *PrometheusMetricsCollector
 			Name:      "http_client_request_duration_seconds",
 			Help:      "A histogram of the http client requests durations.",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 150, 300, 600},
+			ConstLabels: prometheus.Labels{
+				libinfo.PrometheusLibVersionLabel: libinfo.GetLibVersion(),
+			},
 		}, []string{"client_type", "remote_address", "summary", "status", "request_type"}),
 	}
 }
