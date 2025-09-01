@@ -17,6 +17,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"github.com/acronis/go-appkit/httpserver/middleware"
 	"github.com/acronis/go-appkit/log"
 	"github.com/acronis/go-appkit/retry"
 )
@@ -47,7 +48,7 @@ type RetryableRoundTripper struct {
 	Delegate http.RoundTripper
 
 	// Logger is used for logging.
-	// When it's necessary to use context-specific logger, LoggerProvider should be used instead.
+	// Deprecated: use LoggerProvider instead.
 	Logger log.FieldLogger
 
 	// LoggerProvider is a function that provides a context-specific logger.
@@ -79,7 +80,7 @@ type RetryableRoundTripper struct {
 // RetryableRoundTripperOpts represents an options for RetryableRoundTripper.
 type RetryableRoundTripperOpts struct {
 	// Logger is used for logging.
-	// When it's necessary to use context-specific logger, LoggerProvider should be used instead.
+	// Deprecated: use LoggerProvider instead.
 	Logger log.FieldLogger
 
 	// LoggerProvider is a function that provides a context-specific logger.
@@ -246,10 +247,19 @@ func (rt *RetryableRoundTripper) makeNextWaitTimeProvider() waitTimeProvider {
 }
 
 func (rt *RetryableRoundTripper) logger(ctx context.Context) log.FieldLogger {
-	if rt.LoggerProvider != nil {
-		return rt.LoggerProvider(ctx)
+	var l log.FieldLogger
+	switch {
+	case rt.LoggerProvider != nil:
+		l = rt.LoggerProvider(ctx)
+	case rt.Logger != nil:
+		l = rt.Logger
+	default:
+		l = middleware.GetLoggerFromContext(ctx)
 	}
-	return rt.Logger
+	if l != nil {
+		return l
+	}
+	return disableLogger
 }
 
 // RetryableRoundTripperError is returned in RoundTrip method of RetryableRoundTripper
