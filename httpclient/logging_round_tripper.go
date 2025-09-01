@@ -86,15 +86,6 @@ func NewLoggingRoundTripperWithOpts(
 	}
 }
 
-// getLogger returns a logger from the context or from the options.
-func (rt *LoggingRoundTripper) getLogger(ctx context.Context) log.FieldLogger {
-	if rt.LoggerProvider != nil {
-		return rt.LoggerProvider(ctx)
-	}
-
-	return middleware.GetLoggerFromContext(ctx)
-}
-
 // RoundTrip adds logging capabilities to the HTTP transport.
 // It logs HTTP requests and responses, tracking execution time and success/failure status.
 //
@@ -114,7 +105,7 @@ func (rt *LoggingRoundTripper) getLogger(ctx context.Context) log.FieldLogger {
 //     sequential requests.
 func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx := r.Context()
-	logger := rt.getLogger(ctx)
+	logger := getLogger(ctx, rt.LoggerProvider)
 	if logger == nil {
 		return rt.Delegate.RoundTrip(r)
 	}
@@ -166,4 +157,19 @@ func (rt *LoggingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error
 	}
 
 	return resp, err
+}
+
+var disableLogger = log.NewDisabledLogger()
+
+func getLogger(ctx context.Context, provider func(ctx context.Context) log.FieldLogger) log.FieldLogger {
+	var l log.FieldLogger
+	if provider != nil {
+		l = provider(ctx)
+	} else {
+		l = middleware.GetLoggerFromContext(ctx)
+	}
+	if l != nil {
+		return l
+	}
+	return disableLogger
 }
