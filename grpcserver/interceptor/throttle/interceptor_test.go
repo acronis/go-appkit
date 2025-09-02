@@ -224,21 +224,24 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_InFlightLimitBasi
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
-	// Add delay to the service handler to ensure requests are actually in-flight
-	var requestStarted, requestCanFinish sync.WaitGroup
-	requestStarted.Add(1)
-	requestCanFinish.Add(1)
+	requestStarted := make(chan struct{}, 1)
+	requestCanFinish := make(chan struct{}, 1)
+	var requestsCounter atomic.Int32
 
 	if s.IsUnary {
 		svc.(*testService).unaryCallHandler = func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
-			requestStarted.Done()
-			requestCanFinish.Wait()
+			if requestsCounter.Add(1) == 1 {
+				close(requestStarted)
+				<-requestCanFinish
+			}
 			return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
 		}
 	} else {
 		svc.(*testService).streamingOutputCallHandler = func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
-			requestStarted.Done()
-			requestCanFinish.Wait()
+			if requestsCounter.Add(1) == 1 {
+				close(requestStarted)
+				<-requestCanFinish
+			}
 			return stream.Send(&grpc_testing.StreamingOutputCallResponse{
 				Payload: &grpc_testing.Payload{Body: []byte("test-stream")},
 			})
@@ -281,18 +284,19 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_InFlightLimitBasi
 	}
 
 	// Wait for the first request to start
-	requestStarted.Wait()
+	<-requestStarted
 
 	// Give a small delay to ensure other requests are queued
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	// Allow the first request to complete
-	requestCanFinish.Done()
+	close(requestCanFinish)
 
 	wg.Wait()
 
-	s.Require().Equal(1, int(okCount.Load()))
-	s.Require().Equal(concurrentReqs-1, int(rejectedCount.Load()))
+	s.Require().Equal(1, int(requestsCounter.Load()), "only one request should be processed")
+	s.Require().Equal(1, int(okCount.Load()), "only one request should succeed")
+	s.Require().Equal(concurrentReqs-1, int(rejectedCount.Load()), "all other requests should be rejected")
 
 	// Verify in-flight limit reject metrics
 	s.Require().Equal(0, int(mockCollector.rateLimitRejects.Load()))
