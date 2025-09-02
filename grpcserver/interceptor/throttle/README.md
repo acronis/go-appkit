@@ -1,8 +1,8 @@
-# gRPC Interceptor for API Throttling
+# grpcserver/interceptor/throttle
 
-The package provides comprehensive throttling for gRPC services with both rate limiting and in-flight request limiting capabilities. It supports multiple algorithms, flexible configuration, and extensive customization options.
+[![GoDoc Widget]][GoDoc]
 
-The throttling is implemented as standard gRPC interceptors and can be configured from code or from JSON/YAML configuration files.
+A comprehensive gRPC server throttling interceptors with flexible configuration from JSON/YAML files and both rate limiting and in-flight request limiting capabilities.
 
 See complete working example of using configurable gRPC throttling in the [Echo Service Example](./../../examples/echo-service).
 
@@ -545,8 +545,5 @@ Extracts keys from client IP addresses.
 - **Status**: `codes.Internal`
 - **Message**: "Internal server error"
 
-## License
-
-Copyright © 2025 Acronis International GmbH.
-
-Licensed under [MIT License](./../../../../LICENSE).
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/grpcserver/interceptor/throttle
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg

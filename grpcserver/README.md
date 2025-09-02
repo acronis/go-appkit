@@ -1,5 +1,7 @@
 # grpcserver
 
+[![GoDoc Widget]][GoDoc]
+
 A gRPC server implementation with YAML/JSON based configuration, built-in interceptors, and observability features.
 
 ## Features
@@ -62,3 +64,6 @@ The server can be easily configured from JSON/YAML files with options including:
 - Graceful shutdown parameters
 
 See the examples directory for complete configuration examples.
+
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/grpcserver
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg

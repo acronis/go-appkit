@@ -1,10 +1,21 @@
-# HTTP middleware for API throttling
+# httpserver/middleware/throttle
 
-The package provides two types of server-side throttling for HTTP services:
-1. In-flight throttling limits the total number of currently served (in-flight) HTTP requests.
-2. Rate-limit throttling limits the rate of HTTP requests using the leaky bucket or the sliding window algorithms (it's configurable, the leaky bucket is used by default).
+[![GoDoc Widget]][GoDoc]
 
-Throttling is implemented as a typical Go HTTP middleware and can be configured from the code or from the JSON/YAML configuration file.
+A comprehensive HTTP request throttling middleware with flexible configuration from JSON/YAML files and both rate limiting and in-flight request limiting capabilities.
+
+## Features
+
+- **Rate Limiting**: Controls the frequency of requests over time using leaky bucket (with burst support) or sliding window algorithms
+- **In-Flight Limiting**: Controls the number of concurrent requests being processed
+- **Flexible Key Extraction**: Global, per-client IP, per-header value, or custom identity-based throttling
+- **Nginx-style Route Matching**: Location-based route selection with exact matches and patterns
+- **Request Backlogging**: Queue requests when limits are reached with configurable timeouts
+- **Dry-Run Mode**: Test throttling configurations without enforcement
+- **Comprehensive Metrics**: Prometheus metrics for monitoring and alerting
+- **Tag-Based Rules**: Apply different throttling rules to different middleware instances
+- **Key Filtering**: Include/exclude specific keys with glob pattern support
+- **Auto Retry-After**: Automatic calculation of retry intervals for rate limits
 
 Please see [testable example](./example_test.go) to understand how to configure and use the middleware.
 
@@ -287,8 +298,5 @@ For in-flight limiting:
 {"msg": "too many in-flight requests, serving will be continued because of dry run mode", "in_flight_limit_key": "3c00e780-5721-59f8-acad-f0bf719777d4"}
 ```
 
-## License
-
-Copyright © 2024 Acronis International GmbH.
-
-Licensed under [MIT License](./../../../LICENSE).
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/httpserver/middleware/throttle
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg
