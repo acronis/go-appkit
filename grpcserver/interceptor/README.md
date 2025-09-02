@@ -1,6 +1,8 @@
 # grpcserver/interceptor
 
-A collection of gRPC interceptors for logging, metrics collection, panic recovery, request ID handling, rate limiting, and in-flight limiting. These interceptors enhance gRPC services with observability, reliability, and traffic control features.
+[![GoDoc Widget]][GoDoc]
+
+A collection of gRPC server interceptors for logging, metrics collection, panic recovery, request ID handling, rate limiting, and in-flight limiting. These interceptors enhance gRPC services with observability, reliability, and traffic control features.
 
 See complete working example of using these interceptors in the [Echo Service Example](./../examples/echo-service).
 
@@ -627,3 +629,6 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
    - Avoid keys that could lead to hot spots (e.g., constant values)
    - Consider using multiple levels of rate limiting (global + per-client)
    - Implement bypass logic for internal or privileged clients
+
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/grpcserver/interceptor
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg

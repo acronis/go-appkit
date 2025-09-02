@@ -1,8 +1,10 @@
 # httpclient
 
-This package provides a collection of HTTP round trippers that can be chained together to enhance HTTP clients with reliability, observability, and traffic control features.
+[![GoDoc Widget]][GoDoc]
 
-Additionally, it includes a factory function to create HTTP clients with pre-configured round trippers based on YAML/JSON configuration files.
+A collection of HTTP client round trippers that can be chained together to enhance HTTP clients with reliability, observability, and traffic control features.
+
+Additionally, the package includes a factory function to create HTTP clients with pre-configured round trippers based on YAML/JSON configuration files.
 
 ## Table of Contents
 
@@ -288,10 +290,10 @@ client := &http.Client{Transport: transport}
 
 ## Client Factory and Configuration
 
-The package provides factory functions to create HTTP clients with pre-configured round trippers. Configuration can be loaded from YAML files, environment variables, or defined programmatically.
+The package provides factory functions to create HTTP clients with pre-configured round trippers. Configuration can be loaded from YAML, JSON, environment variables, or defined programmatically.
 
 **Configuration can be loaded from:**
-- YAML/JSON files using unmarshalling
+- YAML/JSON data using unmarshalling
 - YAML/JSON files and/or environment variables using `config.Loader`
 - Direct struct initialization
 
@@ -369,3 +371,6 @@ func createClientFromYAML() (*http.Client, error) {
     })
 }
 ```
+
+[GoDoc]: https://pkg.go.dev/github.com/acronis/go-appkit/httpclient
+[GoDoc Widget]: https://godoc.org/github.com/acronis/go-appkit?status.svg
