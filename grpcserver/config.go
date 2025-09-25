@@ -16,21 +16,22 @@ import (
 const cfgDefaultKeyPrefix = "grpcServer"
 
 const (
-	cfgKeyServerAddress              = "address"
-	cfgKeyServerUnixSocketPath       = "unixSocketPath"
-	cfgKeyServerTLSCert              = "tls.cert"
-	cfgKeyServerTLSKey               = "tls.key"
-	cfgKeyServerTLSEnabled           = "tls.enabled"
-	cfgKeyServerShutdownTimeout      = "timeouts.shutdown"
-	cfgKeyServerKeepaliveTime        = "keepalive.time"
-	cfgKeyServerKeepaliveTimeout     = "keepalive.timeout"
-	cfgKeyServerKeepaliveMinTime     = "keepalive.minTime"
-	cfgKeyServerMaxConcurrentStreams = "limits.maxConcurrentStreams"
-	cfgKeyServerMaxRecvMessageSize   = "limits.maxRecvMessageSize"
-	cfgKeyServerMaxSendMessageSize   = "limits.maxSendMessageSize"
-	cfgKeyServerLogCallStart         = "log.callStart"
-	cfgKeyServerLogExcludedMethods   = "log.excludedMethods"
-	cfgKeyServerLogSlowCallThreshold = "log.slowCallThreshold"
+	cfgKeyServerAddress               = "address"
+	cfgKeyServerUnixSocketPath        = "unixSocketPath"
+	cfgKeyServerTLSCert               = "tls.cert"
+	cfgKeyServerTLSKey                = "tls.key"
+	cfgKeyServerTLSEnabled            = "tls.enabled"
+	cfgKeyServerShutdownTimeout       = "timeouts.shutdown"
+	cfgKeyServerKeepaliveTime         = "keepalive.time"
+	cfgKeyServerKeepaliveTimeout      = "keepalive.timeout"
+	cfgKeyServerKeepaliveMinTime      = "keepalive.minTime"
+	cfgKeyServerMaxConcurrentStreams  = "limits.maxConcurrentStreams"
+	cfgKeyServerMaxRecvMessageSize    = "limits.maxRecvMessageSize"
+	cfgKeyServerMaxSendMessageSize    = "limits.maxSendMessageSize"
+	cfgKeyServerLogCallStart          = "log.callStart"
+	cfgKeyServerLogExcludedMethods    = "log.excludedMethods"
+	cfgKeyServerLogSlowCallThreshold  = "log.slowCallThreshold"
+	cfgKeyServerLogTimeSlotsThreshold = "log.timeSlotsThreshold"
 )
 
 const (
@@ -225,9 +226,10 @@ func (l *LimitsConfig) Set(dp config.DataProvider) error {
 
 // LogConfig represents a set of configuration parameters for gRPC Server relating to logging.
 type LogConfig struct {
-	CallStart         bool                `mapstructure:"callStart" yaml:"callStart" json:"callStart"`
-	ExcludedMethods   []string            `mapstructure:"excludedMethods" yaml:"excludedMethods" json:"excludedMethods"`
-	SlowCallThreshold config.TimeDuration `mapstructure:"slowCallThreshold" yaml:"slowCallThreshold" json:"slowCallThreshold"`
+	CallStart          bool                `mapstructure:"callStart" yaml:"callStart" json:"callStart"`
+	ExcludedMethods    []string            `mapstructure:"excludedMethods" yaml:"excludedMethods" json:"excludedMethods"`
+	SlowCallThreshold  config.TimeDuration `mapstructure:"slowCallThreshold" yaml:"slowCallThreshold" json:"slowCallThreshold"`
+	TimeSlotsThreshold config.TimeDuration `mapstructure:"timeSlotsThreshold" yaml:"timeSlotsThreshold" json:"timeSlotsThreshold"`
 }
 
 // Set sets log server configuration values from config.DataProvider.
@@ -246,6 +248,11 @@ func (l *LogConfig) Set(dp config.DataProvider) error {
 		return err
 	}
 	l.SlowCallThreshold = config.TimeDuration(dur)
+
+	if dur, err = dp.GetDuration(cfgKeyServerLogTimeSlotsThreshold); err != nil {
+		return err
+	}
+	l.TimeSlotsThreshold = config.TimeDuration(dur)
 
 	return nil
 }

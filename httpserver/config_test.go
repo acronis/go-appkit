@@ -48,6 +48,8 @@ server:
     maxBodySize: 1M
   log:
     requestStart: true
+    slowRequestThreshold: 2s
+    timeSlotsThreshold: 500ms
   tls:
     enabled: true
     cert: "/test/path"
@@ -64,6 +66,8 @@ server:
 				cfg.Limits.MaxRequests = 10
 				cfg.Limits.MaxBodySizeBytes = 1024 * 1024
 				cfg.Log.RequestStart = true
+				cfg.Log.SlowRequestThreshold = config.TimeDuration(2 * time.Second)
+				cfg.Log.TimeSlotsThreshold = config.TimeDuration(500 * time.Millisecond)
 				cfg.TLS.Enabled = true
 				cfg.TLS.Certificate = "/test/path"
 				cfg.TLS.Key = "/test/path"

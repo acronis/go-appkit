@@ -39,7 +39,8 @@ type LoggingOpts struct {
 	ExcludedEndpoints      []string
 	SecretQueryParams      []string
 	AddRequestInfoToLogger bool
-	SlowRequestThreshold   time.Duration // controls when to include "time_slots" field group into final log message
+	SlowRequestThreshold   time.Duration // controls when to include "slow_request" flag into final log message
+	TimeSlotsThreshold     time.Duration // controls when to include "time_slots" field group into final log message
 	// If CustomLoggerProvider is not set or returns nil, loggingHandler.logger will be used.
 	CustomLoggerProvider CustomLoggerProvider
 }
@@ -60,6 +61,9 @@ func Logging(logger log.FieldLogger) func(next http.Handler) http.Handler {
 func LoggingWithOpts(logger log.FieldLogger, opts LoggingOpts) func(next http.Handler) http.Handler {
 	if opts.SlowRequestThreshold == 0 {
 		opts.SlowRequestThreshold = 1 * time.Second
+	}
+	if opts.TimeSlotsThreshold == 0 {
+		opts.TimeSlotsThreshold = opts.SlowRequestThreshold
 	}
 	return func(next http.Handler) http.Handler {
 		return &loggingHandler{next: next, logger: logger, opts: opts}
@@ -130,13 +134,15 @@ func (h *loggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	if !noLog || wrw.Status() >= http.StatusBadRequest {
 		duration := time.Since(startTime)
-		if duration >= h.opts.SlowRequestThreshold {
+		if duration >= h.opts.TimeSlotsThreshold {
 			lp.AddTimeSlotDurationInMs("writing_response_ms", wrw.ElapsedTime())
 			lp.fields = append(
 				lp.fields,
-				log.Bool("slow_request", true),
 				log.Field{Key: "time_slots", Type: logf.FieldTypeObject, Any: lp.getTimeSlots()},
 			)
+		}
+		if duration >= h.opts.SlowRequestThreshold {
+			lp.fields = append(lp.fields, log.Bool("slow_request", true))
 		}
 		logger.Info(
 			fmt.Sprintf("response completed in %.3fs", duration.Seconds()),

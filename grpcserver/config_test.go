@@ -62,6 +62,7 @@ grpcServer:
       - "grpc.health.v1.Health/Check"
       - "grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"
     slowCallThreshold: 2s
+    timeSlotsThreshold: 500ms
   tls:
     enabled: true
     cert: "/test/cert.pem"
@@ -84,6 +85,7 @@ grpcServer:
 					"grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
 				}
 				cfg.Log.SlowCallThreshold = config.TimeDuration(2 * time.Second)
+				cfg.Log.TimeSlotsThreshold = config.TimeDuration(500 * time.Millisecond)
 				cfg.TLS.Enabled = true
 				cfg.TLS.Certificate = "/test/cert.pem"
 				cfg.TLS.Key = "/test/key.pem"
@@ -324,6 +326,7 @@ func (s *ConfigTestSuite) TestNewDefaultConfigValues() {
 	s.Require().Equal(config.ByteSize(defaultServerMaxRecvMessageSize), cfg.Limits.MaxRecvMessageSize)
 	s.Require().Equal(config.ByteSize(defaultServerMaxSendMessageSize), cfg.Limits.MaxSendMessageSize)
 	s.Require().Equal(config.TimeDuration(defaultSlowCallThreshold), cfg.Log.SlowCallThreshold)
+	s.Require().Equal(config.TimeDuration(0), cfg.Log.TimeSlotsThreshold)
 
 	// Test with custom key prefix
 	cfg = NewDefaultConfig(WithKeyPrefix("custom"))

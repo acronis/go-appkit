@@ -175,6 +175,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_AllOptions() 
 				WithLoggingCallHeaders(map[string]string{"custom-header": "custom_header_field"}),
 				WithLoggingAddCallInfoToLogger(true),
 				WithLoggingSlowCallThreshold(50 * time.Millisecond),
+				WithLoggingTimeSlotsThreshold(50 * time.Millisecond),
 			},
 			expectedLogs: 2,
 		},
@@ -330,10 +331,12 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_ExcludedMetho
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests() {
 	const headerRequestID = "test-request-id"
 	const slowCallThreshold = 10 * time.Millisecond
+	const timeSlotsThreshold = 10 * time.Millisecond
 
 	logger := logtest.NewRecorder()
 	svc, client, closeSvc, err := s.setupTestService(logger, "", []LoggingOption{
 		WithLoggingSlowCallThreshold(slowCallThreshold),
+		WithLoggingTimeSlotsThreshold(timeSlotsThreshold),
 	})
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
@@ -381,6 +384,7 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_SlowRequests(
 func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams() {
 	const headerRequestID = "test-request-id"
 	const slowCallThreshold = 10 * time.Millisecond
+	const timeSlotsThreshold = 10 * time.Millisecond
 
 	tests := []struct {
 		name              string
@@ -440,7 +444,10 @@ func (s *LoggingInterceptorTestSuite) TestLoggingServerInterceptor_LoggingParams
 			var options []LoggingOption
 			if tt.expectedTimeSlot != "" {
 				// Use low threshold to ensure time_slots are logged
-				options = []LoggingOption{WithLoggingSlowCallThreshold(slowCallThreshold)}
+				options = []LoggingOption{
+					WithLoggingSlowCallThreshold(slowCallThreshold),
+					WithLoggingTimeSlotsThreshold(timeSlotsThreshold),
+				}
 			}
 			_, client, closeSvc, err := s.setupTestServiceWithLoggingParamsHandlerAndOptions(logger, tt.setupParams, options)
 			s.Require().NoError(err)

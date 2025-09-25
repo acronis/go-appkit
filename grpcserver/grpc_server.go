@@ -301,6 +301,7 @@ func buildInterceptors(
 	loggingOptions := []interceptor.LoggingOption{
 		interceptor.WithLoggingCallStart(cfg.Log.CallStart),
 		interceptor.WithLoggingSlowCallThreshold(time.Duration(cfg.Log.SlowCallThreshold)),
+		interceptor.WithLoggingTimeSlotsThreshold(time.Duration(cfg.Log.TimeSlotsThreshold)),
 		interceptor.WithLoggingExcludedMethods(cfg.Log.ExcludedMethods...),
 	}
 	unaryLoggingOptions := append([]interceptor.LoggingOption(nil), loggingOptions...)

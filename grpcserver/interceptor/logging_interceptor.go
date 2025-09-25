@@ -25,7 +25,9 @@ import (
 
 const headerUserAgentKey = "user-agent"
 
-const defaultSlowCallThreshold = 1 * time.Second
+const (
+	defaultSlowCallThreshold = 1 * time.Second
+)
 
 // UnaryCustomLoggerProvider returns a custom logger or nil based on the gRPC context and method info.
 type UnaryCustomLoggerProvider func(ctx context.Context, info *grpc.UnaryServerInfo) log.FieldLogger
@@ -42,6 +44,7 @@ type loggingOptions struct {
 	excludedMethods            []string
 	addCallInfoToLogger        bool
 	slowCallThreshold          time.Duration
+	timeSlotsThreshold         time.Duration
 	unaryCustomLoggerProvider  UnaryCustomLoggerProvider
 	streamCustomLoggerProvider StreamCustomLoggerProvider
 }
@@ -81,6 +84,13 @@ func WithLoggingSlowCallThreshold(threshold time.Duration) LoggingOption {
 	}
 }
 
+// WithLoggingTimeSlotsThreshold sets the threshold for adding time_slots structure for calls analysis.
+func WithLoggingTimeSlotsThreshold(threshold time.Duration) LoggingOption {
+	return func(opts *loggingOptions) {
+		opts.timeSlotsThreshold = threshold
+	}
+}
+
 // WithLoggingUnaryCustomLoggerProvider sets a custom logger provider function.
 func WithLoggingUnaryCustomLoggerProvider(provider UnaryCustomLoggerProvider) LoggingOption {
 	return func(opts *loggingOptions) {
@@ -105,6 +115,9 @@ func LoggingUnaryInterceptor(logger log.FieldLogger, options ...LoggingOption) f
 	opts := &loggingOptions{slowCallThreshold: defaultSlowCallThreshold}
 	for _, option := range options {
 		option(opts)
+	}
+	if opts.timeSlotsThreshold == 0 {
+		opts.timeSlotsThreshold = opts.slowCallThreshold
 	}
 	return func(
 		ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
@@ -138,6 +151,9 @@ func LoggingStreamInterceptor(logger log.FieldLogger, options ...LoggingOption) 
 	opts := &loggingOptions{slowCallThreshold: defaultSlowCallThreshold}
 	for _, option := range options {
 		option(opts)
+	}
+	if opts.timeSlotsThreshold == 0 {
+		opts.timeSlotsThreshold = opts.slowCallThreshold
 	}
 	return func(
 		srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler,
@@ -202,12 +218,11 @@ func loggingServerInterceptor(
 
 	grpcCode := status.Code(err)
 	if !noLog || grpcCode != codes.OK { // Log if not excluded or if there's an error
+		if duration >= opts.timeSlotsThreshold {
+			lp.fields = append(lp.fields, log.Object("time_slots", lp.getTimeSlots()))
+		}
 		if duration >= opts.slowCallThreshold {
-			lp.fields = append(
-				lp.fields,
-				log.Bool("slow_request", true),
-				log.Object("time_slots", lp.getTimeSlots()),
-			)
+			lp.fields = append(lp.fields, log.Bool("slow_request", true))
 		}
 		logFields = append(
 			logFields,
