@@ -93,6 +93,7 @@ func applyDefaultMiddlewaresToRouter(
 		SecretQueryParams:      cfg.Log.SecretQueryParams,
 		AddRequestInfoToLogger: cfg.Log.AddRequestInfoToLogger,
 		SlowRequestThreshold:   time.Duration(cfg.Log.SlowRequestThreshold),
+		TimeSlotsThreshold:     time.Duration(cfg.Log.TimeSlotsThreshold),
 	}
 	for _, headerName := range cfg.Log.RequestHeaders {
 		logFieldKey := "req_header_" + strings.ToLower(strings.ReplaceAll(headerName, "-", "_"))

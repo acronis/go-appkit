@@ -34,6 +34,7 @@ const (
 	cfgKeyServerLogSecretQueryParams    = "log.secretQueryParams" // nolint:gosec // false positive
 	cfgKeyServerLogAddRequestInfo       = "log.addRequestInfo"
 	cfgKeyServerLogSlowRequestThreshold = "log.slowRequestThreshold"
+	cfgKeyServerLogTimeSlotsThreshold   = "log.timeSlotsThreshold"
 )
 
 const (
@@ -229,6 +230,7 @@ type LogConfig struct {
 	SecretQueryParams      []string            `mapstructure:"secretQueryParams" yaml:"secretQueryParams"`
 	AddRequestInfoToLogger bool                `mapstructure:"addRequestInfo" yaml:"addRequestInfo" json:"addRequestInfo"`
 	SlowRequestThreshold   config.TimeDuration `mapstructure:"slowRequestThreshold" yaml:"slowRequestThreshold" json:"slowRequestThreshold"`
+	TimeSlotsThreshold     config.TimeDuration `mapstructure:"timeSlotsThreshold" yaml:"timeSlotsThreshold" json:"timeSlotsThreshold"`
 }
 
 // Set sets log server configuration values from config.DataProvider.
@@ -256,6 +258,10 @@ func (l *LogConfig) Set(dp config.DataProvider) error {
 		return err
 	}
 	l.SlowRequestThreshold = config.TimeDuration(dur)
+	if dur, err = dp.GetDuration(cfgKeyServerLogTimeSlotsThreshold); err != nil {
+		return err
+	}
+	l.TimeSlotsThreshold = config.TimeDuration(dur)
 
 	return nil
 }
