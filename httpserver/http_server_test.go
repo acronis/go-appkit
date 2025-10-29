@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -584,4 +585,192 @@ func TestHTTPServer_MaxRequestsLimiting(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 
 	require.NoError(t, <-errCh)
+}
+
+func TestHTTPServer_NewWithCustomHandler(t *testing.T) {
+	addr := testutil.GetLocalAddrWithFreeTCPPort()
+
+	// Create a custom handler
+	customHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("custom handler response"))
+		require.NoError(t, err)
+	})
+
+	// Create HTTPServer with custom handler using Opts.Handler
+	httpServer, err := New(&Config{Address: addr}, logtest.NewLogger(), Opts{Handler: customHandler})
+	require.NoError(t, err)
+	require.NotNil(t, httpServer)
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(addr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	// Test that custom handler is used
+	resp, err := http.Get(httpServer.URL + "/any-path")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "custom handler response", string(respBody))
+}
+
+func TestHTTPServer_NewWithCustomListener(t *testing.T) {
+	// Create a custom listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	actualAddr := listener.Addr().String()
+	_, actualPortStr, err := net.SplitHostPort(actualAddr)
+	require.NoError(t, err)
+	actualPort, err := strconv.Atoi(actualPortStr)
+	require.NoError(t, err)
+
+	// Create HTTPServer with custom listener using Opts.Listener
+	httpServer, err := New(&Config{Address: "127.0.0.1:0"}, logtest.NewLogger(), Opts{Listener: listener})
+	require.NoError(t, err)
+	require.NotNil(t, httpServer)
+	require.Equal(t, listener, httpServer.listener)
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(actualAddr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	require.Eventually(t, func() bool {
+		port := httpServer.GetPort()
+		return port == actualPort
+	}, 3*time.Second, 100*time.Millisecond)
+
+	// Test that the server is listening on the custom listener's address
+	resp, err := http.Get(fmt.Sprintf("http://%s/healthz", actualAddr))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestHTTPServer_NewWithCustomHandlerAndListener(t *testing.T) {
+	// Create a custom listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	actualAddr := listener.Addr().String()
+	_, actualPortStr, err := net.SplitHostPort(actualAddr)
+	require.NoError(t, err)
+	actualPort, err := strconv.Atoi(actualPortStr)
+	require.NoError(t, err)
+
+	// Create a custom handler
+	customHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("custom handler and listener"))
+		require.NoError(t, err)
+	})
+
+	// Create HTTPServer with both custom handler and listener
+	httpServer, err := New(&Config{Address: "127.0.0.1:0"}, logtest.NewLogger(), Opts{
+		Handler:  customHandler,
+		Listener: listener,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, httpServer)
+	require.Equal(t, listener, httpServer.listener)
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(actualAddr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	require.Eventually(t, func() bool {
+		port := httpServer.GetPort()
+		return port == actualPort
+	}, 3*time.Second, 100*time.Millisecond)
+
+	// Test that both custom handler and listener are used
+	resp, err := http.Get(fmt.Sprintf("http://%s/test", actualAddr))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "custom handler and listener", string(respBody))
+}
+
+func TestHTTPServer_NewWithCustomHandlerNoMetrics(t *testing.T) {
+	addr := testutil.GetLocalAddrWithFreeTCPPort()
+
+	// Create a custom handler (chi.Router)
+	customRouter := chi.NewRouter()
+	customRouter.Get("/test", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("test response"))
+		require.NoError(t, err)
+	})
+
+	// Create HTTPServer with custom handler - should not have prometheus metrics
+	httpServer, err := New(&Config{Address: addr}, logtest.NewLogger(), Opts{Handler: customRouter})
+	require.NoError(t, err)
+	require.NotNil(t, httpServer)
+	require.Nil(t, httpServer.httpReqPrometheusMetrics, "custom handler should not have prometheus metrics")
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(addr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	// Test that custom handler is used
+	resp, err := http.Get(httpServer.URL + "/test")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestHTTPServer_NewWithAPIRoutesHasMetrics(t *testing.T) {
+	addr := testutil.GetLocalAddrWithFreeTCPPort()
+
+	apiRoutes := map[APIVersion]APIRoute{
+		1: func(router chi.Router) {
+			router.Get("/test", func(rw http.ResponseWriter, r *http.Request) {
+				logger := middleware.GetLoggerFromContext(r.Context())
+				restapi.RespondJSON(rw, map[string]string{"message": "test"}, logger)
+			})
+		},
+	}
+
+	// Create HTTPServer with API routes - should have prometheus metrics
+	httpServer, err := New(&Config{Address: addr}, logtest.NewLogger(), Opts{
+		ServiceNameInURL: "test-service",
+		APIRoutes:        apiRoutes,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, httpServer)
+	require.NotNil(t, httpServer.httpReqPrometheusMetrics, "server with API routes should have prometheus metrics")
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(addr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	// Test that API route works
+	resp, err := http.Get(httpServer.URL + "/api/test-service/v1/test")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, resp.Body.Close()) }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
