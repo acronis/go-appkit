@@ -34,6 +34,7 @@ type HTTPRequestInfoMetrics struct {
 	Method        string
 	RoutePattern  string
 	UserAgentType string
+	CustomValues  map[string]string
 }
 
 // HTTPRequestMetricsCollector is an interface for collecting metrics for incoming HTTP requests.
@@ -68,12 +69,21 @@ type HTTPRequestPrometheusMetricsOpts struct {
 	// HTTPRequestPrometheusMetrics.MustCurryWith method must be called further with the same labels.
 	// Otherwise, the collector will panic.
 	CurriedLabelNames []string
+
+	// CustomLabelNames is a list of custom label names that will be added to the metrics.
+	// Values for these labels provided via HTTPRequestInfoMetrics.CustomValues when recording metrics.
+	// Values in HTTPRequestInfoMetrics.CustomValues can be set dynamically during request processing using MetricsParams.SetValue() method.
+	// MetricsParams can be obtained from the context via GetMetricsParamsFromContext().
+	// If a custom value is not set for a label name provided here, it will be recorded as an empty string in the metric.
+	// If a custom value is set with a name not listed here, it will be ignored.
+	CustomLabelNames []string
 }
 
 // HTTPRequestPrometheusMetrics represents collector of metrics for incoming HTTP requests.
 type HTTPRequestPrometheusMetrics struct {
-	Durations *prometheus.HistogramVec
-	InFlight  *prometheus.GaugeVec
+	Durations        *prometheus.HistogramVec
+	InFlight         *prometheus.GaugeVec
+	customLabelNames []string
 }
 
 // NewHTTPRequestPrometheusMetrics creates a new instance of HTTPRequestPrometheusMetrics with default options.
@@ -84,8 +94,11 @@ func NewHTTPRequestPrometheusMetrics() *HTTPRequestPrometheusMetrics {
 // NewHTTPRequestPrometheusMetricsWithOpts creates a new instance of HTTPRequestPrometheusMetrics with the provided options.
 func NewHTTPRequestPrometheusMetricsWithOpts(opts HTTPRequestPrometheusMetricsOpts) *HTTPRequestPrometheusMetrics {
 	makeLabelNames := func(names ...string) []string {
-		l := append(make([]string, 0, len(opts.CurriedLabelNames)+len(names)), opts.CurriedLabelNames...)
-		return append(l, names...)
+		l := make([]string, 0, len(opts.CurriedLabelNames)+len(names)+len(opts.CustomLabelNames))
+		l = append(l, opts.CurriedLabelNames...)
+		l = append(l, names...)
+		l = append(l, opts.CustomLabelNames...)
+		return l
 	}
 
 	durBuckets := opts.DurationBuckets
@@ -123,16 +136,18 @@ func NewHTTPRequestPrometheusMetricsWithOpts(opts HTTPRequestPrometheusMetricsOp
 	)
 
 	return &HTTPRequestPrometheusMetrics{
-		Durations: durations,
-		InFlight:  inFlight,
+		Durations:        durations,
+		InFlight:         inFlight,
+		customLabelNames: opts.CustomLabelNames,
 	}
 }
 
 // MustCurryWith curries the metrics collector with the provided labels.
 func (pm *HTTPRequestPrometheusMetrics) MustCurryWith(labels prometheus.Labels) *HTTPRequestPrometheusMetrics {
 	return &HTTPRequestPrometheusMetrics{
-		Durations: pm.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
-		InFlight:  pm.InFlight.MustCurryWith(labels),
+		Durations:        pm.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
+		InFlight:         pm.InFlight.MustCurryWith(labels),
+		customLabelNames: pm.customLabelNames,
 	}
 }
 
@@ -150,34 +165,54 @@ func (pm *HTTPRequestPrometheusMetrics) Unregister() {
 	prometheus.Unregister(pm.Durations)
 }
 
+// makeLabels creates prometheus.Labels from base labels and custom labels.
+// It ensures all custom label names from pm.customLabelNames are present (with empty values if not provided).
+func (pm *HTTPRequestPrometheusMetrics) makeLabels(baseLabels prometheus.Labels, customLabels map[string]string) prometheus.Labels {
+	labels := make(prometheus.Labels, len(baseLabels)+len(pm.customLabelNames))
+	for k, v := range baseLabels {
+		labels[k] = v
+	}
+	for _, labelName := range pm.customLabelNames {
+		if v, ok := customLabels[labelName]; ok {
+			labels[labelName] = v
+		} else {
+			labels[labelName] = ""
+		}
+	}
+	return labels
+}
+
 // IncInFlightRequests increments the counter of in-flight requests.
 func (pm *HTTPRequestPrometheusMetrics) IncInFlightRequests(requestInfo HTTPRequestInfoMetrics) {
-	pm.InFlight.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		httpRequestMetricsLabelMethod:        requestInfo.Method,
 		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
 		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
-	}).Inc()
+	}
+	pm.InFlight.With(pm.makeLabels(baseLabels, requestInfo.CustomValues)).Inc()
 }
 
 // DecInFlightRequests decrements the counter of in-flight requests.
 func (pm *HTTPRequestPrometheusMetrics) DecInFlightRequests(requestInfo HTTPRequestInfoMetrics) {
-	pm.InFlight.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		httpRequestMetricsLabelMethod:        requestInfo.Method,
 		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
 		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
-	}).Dec()
+	}
+	pm.InFlight.With(pm.makeLabels(baseLabels, requestInfo.CustomValues)).Dec()
 }
 
 // ObserveRequestFinish observes the duration of the request and the status code.
 func (pm *HTTPRequestPrometheusMetrics) ObserveRequestFinish(
 	requestInfo HTTPRequestInfoMetrics, status int, startTime time.Time,
 ) {
-	pm.Durations.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		httpRequestMetricsLabelMethod:        requestInfo.Method,
 		httpRequestMetricsLabelRoutePattern:  requestInfo.RoutePattern,
 		httpRequestMetricsLabelUserAgentType: requestInfo.UserAgentType,
 		httpRequestMetricsLabelStatusCode:    strconv.Itoa(status),
-	}).Observe(time.Since(startTime).Seconds())
+	}
+	pm.Durations.With(pm.makeLabels(baseLabels, requestInfo.CustomValues)).Observe(time.Since(startTime).Seconds())
 }
 
 // UserAgentTypeGetterFunc is a function for getting user agent type from the request.
@@ -235,10 +270,17 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 		r = r.WithContext(NewContextWithRequestStartTime(r.Context(), startTime))
 	}
 
+	mp := GetMetricsParamsFromContext(r.Context())
+	if mp == nil {
+		mp = &MetricsParams{}
+		r = r.WithContext(NewContextWithMetricsParams(r.Context(), mp))
+	}
+
 	reqInfo := HTTPRequestInfoMetrics{
 		Method:        r.Method,
 		RoutePattern:  h.getRoutePattern(r),
 		UserAgentType: h.opts.GetUserAgentType(r),
+		CustomValues:  copyValues(mp.values), // we copy values here to avoid mutation during the InFlight metrics processing
 	}
 
 	h.collector.IncInFlightRequests(reqInfo)
@@ -255,6 +297,10 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 		if reqInfo.RoutePattern == "" {
 			reqInfo.RoutePattern = h.getRoutePattern(r)
 		}
+
+		// re-extract labels from MetricsParams
+		reqInfo.CustomValues = mp.values
+
 		if p := recover(); p != nil {
 			if p != http.ErrAbortHandler {
 				h.collector.ObserveRequestFinish(reqInfo, http.StatusInternalServerError, startTime)
@@ -265,6 +311,18 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 	}()
 
 	h.next.ServeHTTP(wrw, r)
+}
+
+// copyValues creates a copy of the map.
+func copyValues(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func determineUserAgentType(r *http.Request) string {

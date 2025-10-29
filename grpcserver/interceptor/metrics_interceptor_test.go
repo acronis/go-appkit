@@ -258,6 +258,77 @@ func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorWithoutUserAge
 	testutil.RequireSamplesCountInHistogram(s.T(), getHist(codes.OK), 1)
 }
 
+func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorWithCurriedMetrics() {
+	curriedLabels := map[string]string{"curried1": "value1", "curried2": "value2"}
+	curriedLabelsNames := make([]string, 0, len(curriedLabels))
+	for k := range curriedLabels {
+		curriedLabelsNames = append(curriedLabelsNames, k)
+	}
+
+	promMetrics := NewPrometheusMetrics(WithPrometheusCurriedLabelNames(curriedLabelsNames))
+	promMetrics = promMetrics.MustCurryWith(curriedLabels)
+
+	_, client, closeSvc, err := s.createTestServiceWithOptions(promMetrics)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc()) }()
+
+	methodName, methodType := s.getMethodNameAndType()
+	getHist := func(code codes.Code) prometheus.Histogram {
+		return promMetrics.Durations.WithLabelValues(
+			"grpc.testing.TestService", methodName, string(methodType), "", code.String()).(prometheus.Histogram)
+	}
+	gauge := promMetrics.InFlight.WithLabelValues(
+		"grpc.testing.TestService", methodName, string(methodType), "")
+
+	testutil.RequireSamplesCountInHistogram(s.T(), getHist(codes.OK), 0)
+	requireSamplesCountInGauge(s.T(), gauge, 0)
+
+	err = s.makeCall(client)
+	s.Require().NoError(err)
+
+	testutil.RequireSamplesCountInHistogram(s.T(), getHist(codes.OK), 1)
+	requireSamplesCountInGauge(s.T(), gauge, 0)
+}
+
+func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorWithCustomMetrics() {
+	customLabels := map[string]string{"custom1": "value1", "custom2": "value2"}
+	customLabelsNames := make([]string, 0, len(customLabels))
+	customLabelsValues := make([]string, 0, len(customLabels))
+	for k, v := range customLabels {
+		customLabelsNames = append(customLabelsNames, k)
+		customLabelsValues = append(customLabelsValues, v)
+	}
+
+	promMetrics := NewPrometheusMetrics(WithPrometheusCustomLabelNames(customLabelsNames))
+
+	_, client, closeSvc, err := s.createTestServiceWithMetricsParamsAndOptions(promMetrics,
+		func(params *MetricsParams) {
+			for k, v := range customLabels {
+				params.SetValue(k, v)
+			}
+		},
+	)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc()) }()
+
+	methodName, methodType := s.getMethodNameAndType()
+	getHist := func(code codes.Code) prometheus.Histogram {
+		return promMetrics.Durations.WithLabelValues(
+			append([]string{"grpc.testing.TestService", methodName, string(methodType), "", code.String()}, customLabelsValues...)...).(prometheus.Histogram)
+	}
+	gauge := promMetrics.InFlight.WithLabelValues(
+		"grpc.testing.TestService", methodName, string(methodType), "", "", "")
+
+	testutil.RequireSamplesCountInHistogram(s.T(), getHist(codes.OK), 0)
+	requireSamplesCountInGauge(s.T(), gauge, 0)
+
+	err = s.makeCall(client)
+	s.Require().NoError(err)
+
+	testutil.RequireSamplesCountInHistogram(s.T(), getHist(codes.OK), 1)
+	requireSamplesCountInGauge(s.T(), gauge, 0)
+}
+
 func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorPanicHandling() {
 	promMetrics := NewPrometheusMetrics()
 
@@ -321,6 +392,38 @@ func (s *MetricsInterceptorTestSuite) createTestServiceWithRecovery(promMetrics 
 		)}
 	}
 	return startTestService(serverOptions, nil)
+}
+
+func (s *MetricsInterceptorTestSuite) createTestServiceWithMetricsParamsAndOptions(
+	promMetrics *PrometheusMetrics, setupParams func(params *MetricsParams), options ...MetricsOption,
+) (*testService, grpc_testing.TestServiceClient, func() error, error) {
+	svc, client, closeSvc, err := s.createTestServiceWithOptions(promMetrics, options...)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Modify the service handlers to use MetricsParams from context
+	if s.IsUnary {
+		svc.SwitchUnaryCallHandler(func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
+			// Get the MetricsParams that the metrics interceptor put in the context
+			if params := GetMetricsParamsFromContext(ctx); params != nil {
+				setupParams(params)
+			}
+			return &grpc_testing.SimpleResponse{Payload: &grpc_testing.Payload{Body: []byte("test")}}, nil
+		})
+	} else {
+		svc.SwitchStreamingOutputCallHandler(func(req *grpc_testing.StreamingOutputCallRequest, stream grpc_testing.TestService_StreamingOutputCallServer) error {
+			// Get the MetricsParams that the metrics interceptor put in the context
+			if params := GetMetricsParamsFromContext(stream.Context()); params != nil {
+				setupParams(params)
+			}
+			return stream.Send(&grpc_testing.StreamingOutputCallResponse{
+				Payload: &grpc_testing.Payload{Body: []byte("test")},
+			})
+		})
+	}
+
+	return svc, client, closeSvc, nil
 }
 
 func (s *MetricsInterceptorTestSuite) getMethodNameAndType() (string, CallMethodType) {

@@ -21,11 +21,20 @@ import (
 type mockHTTPRequestMetricsNextHandler struct {
 	calledNum          int
 	statusCodeToReturn int
+	customLabels       map[string]string
 }
 
 func (h *mockHTTPRequestMetricsNextHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	h.calledNum++
 	rw.WriteHeader(h.statusCodeToReturn)
+	if h.customLabels != nil {
+		mp := GetMetricsParamsFromContext(r.Context())
+		if mp != nil {
+			for k, v := range h.customLabels {
+				mp.SetValue(k, v)
+			}
+		}
+	}
 }
 
 type mockHTTPRequestMetricsDisabledHandler struct{}
@@ -36,13 +45,16 @@ func (h *mockHTTPRequestMetricsDisabledHandler) ServeHTTP(rw http.ResponseWriter
 }
 
 func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
-	makeLabels := func(method, routePattern, uaType, statusCode string) prometheus.Labels {
-		return prometheus.Labels{
-			httpRequestMetricsLabelMethod:        method,
-			httpRequestMetricsLabelRoutePattern:  routePattern,
-			httpRequestMetricsLabelUserAgentType: uaType,
-			httpRequestMetricsLabelStatusCode:    statusCode,
+	makeLabels := func(method, routePattern, uaType, statusCode string, customLabels map[string]string) prometheus.Labels {
+		labels := make(prometheus.Labels, 4+len(customLabels))
+		labels[httpRequestMetricsLabelMethod] = method
+		labels[httpRequestMetricsLabelRoutePattern] = routePattern
+		labels[httpRequestMetricsLabelUserAgentType] = uaType
+		labels[httpRequestMetricsLabelStatusCode] = statusCode
+		for k, v := range customLabels {
+			labels[k] = v
 		}
+		return labels
 	}
 
 	getRoutePattern := func(r *http.Request) string {
@@ -61,6 +73,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 			getUserAgentType   UserAgentTypeGetterFunc
 			excludedEndpoints  []string
 			curriedLabels      prometheus.Labels
+			customLabels       map[string]string
 		}{
 			{
 				name:               "GET request, user agent is not browser",
@@ -124,6 +137,27 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 				wantUserAgentType:  userAgentTypeHTTPClient,
 				curriedLabels:      prometheus.Labels{"extra1": "value1", "extra2": "value2"},
 			},
+			{
+				name:               "GET request, custom labels",
+				method:             http.MethodGet,
+				url:                "/hello-currying",
+				userAgent:          "agent1",
+				statusCodeToReturn: http.StatusOK,
+				reqsNum:            10,
+				wantUserAgentType:  userAgentTypeHTTPClient,
+				customLabels:       map[string]string{"custom1": "value1", "custom2": "value2"},
+			},
+			{
+				name:               "GET request, custom labels, labels currying",
+				method:             http.MethodGet,
+				url:                "/hello-currying",
+				userAgent:          "agent1",
+				statusCodeToReturn: http.StatusOK,
+				reqsNum:            10,
+				wantUserAgentType:  userAgentTypeHTTPClient,
+				curriedLabels:      prometheus.Labels{"extra1": "value1", "extra2": "value2"},
+				customLabels:       map[string]string{"custom1": "value1", "custom2": "value2"},
+			},
 		}
 		for i := range tests {
 			tt := tests[i]
@@ -132,8 +166,13 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 				for k := range tt.curriedLabels {
 					curriedLabelNames = append(curriedLabelNames, k)
 				}
+				customLabelNames := make([]string, 0, len(tt.customLabels))
+				for k := range tt.customLabels {
+					customLabelNames = append(customLabelNames, k)
+				}
 				collector := NewHTTPRequestPrometheusMetricsWithOpts(HTTPRequestPrometheusMetricsOpts{
 					CurriedLabelNames: curriedLabelNames,
+					CustomLabelNames:  customLabelNames,
 				})
 				collector = collector.MustCurryWith(tt.curriedLabels)
 				mw := HTTPRequestMetricsWithOpts(collector, getRoutePattern, HTTPRequestMetricsOpts{
@@ -141,7 +180,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 					ExcludedEndpoints: tt.excludedEndpoints,
 				})
 
-				next := &mockHTTPRequestMetricsNextHandler{statusCodeToReturn: tt.statusCodeToReturn}
+				next := &mockHTTPRequestMetricsNextHandler{statusCodeToReturn: tt.statusCodeToReturn, customLabels: tt.customLabels}
 				h := mw(next)
 
 				for j := 0; j < tt.reqsNum; j++ {
@@ -153,7 +192,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 				}
 				assert.Equal(t, tt.reqsNum, next.calledNum)
 
-				labels := makeLabels(tt.method, tt.url, tt.wantUserAgentType, strconv.Itoa(tt.statusCodeToReturn))
+				labels := makeLabels(tt.method, tt.url, tt.wantUserAgentType, strconv.Itoa(tt.statusCodeToReturn), tt.customLabels)
 				hist := collector.Durations.With(labels).(prometheus.Histogram)
 				wantReqsNum := tt.reqsNum
 				for _, exEndpoint := range tt.excludedEndpoints {
@@ -175,7 +214,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		if assert.Panics(t, func() { h.ServeHTTP(resp, req) }) {
 			assert.Equal(t, 1, next.called)
-			labels := makeLabels(http.MethodGet, "/internal-error", "http-client", "500")
+			labels := makeLabels(http.MethodGet, "/internal-error", "http-client", "500", nil)
 			hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 			testutil.AssertSamplesCountInHistogram(t, hist, 1)
 		}
@@ -190,7 +229,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		h.ServeHTTP(resp, req)
 		assert.Equal(t, http.StatusOK, resp.Code)
-		labels := makeLabels(http.MethodGet, "/hello", "http-client", "200")
+		labels := makeLabels(http.MethodGet, "/hello", "http-client", "200", nil)
 		hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 		testutil.AssertSamplesCountInHistogram(t, hist, 0)
 	})

@@ -31,6 +31,7 @@ type CallInfoMetrics struct {
 	Service       string
 	Method        string
 	UserAgentType string
+	CustomValues  map[string]string
 }
 
 // CallMethodType represents the type of gRPC method call.
@@ -73,6 +74,7 @@ type prometheusOptions struct {
 	durationBuckets   []float64
 	constLabels       prometheus.Labels
 	curriedLabelNames []string
+	customLabelNames  []string
 }
 
 // WithPrometheusNamespace sets the namespace for metrics.
@@ -103,10 +105,23 @@ func WithPrometheusCurriedLabelNames(labelNames []string) PrometheusOption {
 	}
 }
 
+// WithPrometheusCustomLabelNames sets custom label names that will be added to the metrics.
+// Values for these labels provided via CallInfoMetrics.CustomValues when recording metrics.
+// Values in CallInfoMetrics.CustomValues can be set dynamically during request processing using MetricsParams.SetValue() method.
+// MetricsParams can be obtained from the context via GetMetricsParamsFromContext().
+// If a custom value is not set for a label name provided here, it will be recorded as an empty string in the metric.
+// If a custom value is set with a name not listed here, it will be ignored.
+func WithPrometheusCustomLabelNames(labelNames []string) PrometheusOption {
+	return func(c *prometheusOptions) {
+		c.customLabelNames = labelNames
+	}
+}
+
 // PrometheusMetrics represents collector of metrics for incoming gRPC calls.
 type PrometheusMetrics struct {
-	Durations *prometheus.HistogramVec
-	InFlight  *prometheus.GaugeVec
+	Durations        *prometheus.HistogramVec
+	InFlight         *prometheus.GaugeVec
+	customLabelNames []string
 }
 
 // NewPrometheusMetrics creates a new instance of PrometheusMetrics with the provided options.
@@ -119,8 +134,11 @@ func NewPrometheusMetrics(opts ...PrometheusOption) *PrometheusMetrics {
 	}
 
 	makeLabelNames := func(names ...string) []string {
-		l := append(make([]string, 0, len(config.curriedLabelNames)+len(names)), config.curriedLabelNames...)
-		return append(l, names...)
+		l := make([]string, 0, len(config.curriedLabelNames)+len(names)+len(config.customLabelNames))
+		l = append(l, config.curriedLabelNames...)
+		l = append(l, names...)
+		l = append(l, config.customLabelNames...)
+		return l
 	}
 
 	durations := prometheus.NewHistogramVec(
@@ -156,16 +174,18 @@ func NewPrometheusMetrics(opts ...PrometheusOption) *PrometheusMetrics {
 	)
 
 	return &PrometheusMetrics{
-		Durations: durations,
-		InFlight:  inFlight,
+		Durations:        durations,
+		InFlight:         inFlight,
+		customLabelNames: config.customLabelNames,
 	}
 }
 
 // MustCurryWith curries the metrics collector with the provided labels.
 func (pm *PrometheusMetrics) MustCurryWith(labels prometheus.Labels) *PrometheusMetrics {
 	return &PrometheusMetrics{
-		Durations: pm.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
-		InFlight:  pm.InFlight.MustCurryWith(labels),
+		Durations:        pm.Durations.MustCurryWith(labels).(*prometheus.HistogramVec),
+		InFlight:         pm.InFlight.MustCurryWith(labels),
+		customLabelNames: pm.customLabelNames,
 	}
 }
 
@@ -183,37 +203,57 @@ func (pm *PrometheusMetrics) Unregister() {
 	prometheus.Unregister(pm.Durations)
 }
 
+// makeLabels creates prometheus.Labels from base labels and custom labels.
+// It ensures all custom label names from pm.customLabelNames are present (with empty values if not provided).
+func (pm *PrometheusMetrics) makeLabels(baseLabels prometheus.Labels, customLabels map[string]string) prometheus.Labels {
+	labels := make(prometheus.Labels, len(baseLabels)+len(pm.customLabelNames))
+	for k, v := range baseLabels {
+		labels[k] = v
+	}
+	for _, labelName := range pm.customLabelNames {
+		if v, ok := customLabels[labelName]; ok {
+			labels[labelName] = v
+		} else {
+			labels[labelName] = ""
+		}
+	}
+	return labels
+}
+
 // IncInFlightCalls increments the counter of in-flight calls.
 func (pm *PrometheusMetrics) IncInFlightCalls(callInfo CallInfoMetrics, methodType CallMethodType) {
-	pm.InFlight.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		callMetricsLabelService:       callInfo.Service,
 		callMetricsLabelMethod:        callInfo.Method,
 		callMetricsLabelMethodType:    string(methodType),
 		callMetricsLabelUserAgentType: callInfo.UserAgentType,
-	}).Inc()
+	}
+	pm.InFlight.With(pm.makeLabels(baseLabels, callInfo.CustomValues)).Inc()
 }
 
 // DecInFlightCalls decrements the counter of in-flight calls.
 func (pm *PrometheusMetrics) DecInFlightCalls(callInfo CallInfoMetrics, methodType CallMethodType) {
-	pm.InFlight.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		callMetricsLabelService:       callInfo.Service,
 		callMetricsLabelMethod:        callInfo.Method,
 		callMetricsLabelMethodType:    string(methodType),
 		callMetricsLabelUserAgentType: callInfo.UserAgentType,
-	}).Dec()
+	}
+	pm.InFlight.With(pm.makeLabels(baseLabels, callInfo.CustomValues)).Dec()
 }
 
 // ObserveCallFinish observes the duration of the call and the status code.
 func (pm *PrometheusMetrics) ObserveCallFinish(
 	callInfo CallInfoMetrics, methodType CallMethodType, code codes.Code, startTime time.Time,
 ) {
-	pm.Durations.With(prometheus.Labels{
+	baseLabels := prometheus.Labels{
 		callMetricsLabelService:       callInfo.Service,
 		callMetricsLabelMethod:        callInfo.Method,
 		callMetricsLabelCode:          code.String(),
 		callMetricsLabelMethodType:    string(methodType),
 		callMetricsLabelUserAgentType: callInfo.UserAgentType,
-	}).Observe(time.Since(startTime).Seconds())
+	}
+	pm.Durations.With(pm.makeLabels(baseLabels, callInfo.CustomValues)).Observe(time.Since(startTime).Seconds())
 }
 
 // MetricsOption is a function type for configuring the metrics interceptor.
@@ -257,9 +297,21 @@ func isMethodExcluded(fullMethod string, excludedMethods []string) bool {
 	return false
 }
 
+// copyValues creates a copy of the map.
+func copyValues(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
 // prepareCallMetrics prepares the call metrics information and manages start time.
 func prepareCallMetrics(ctx context.Context, fullMethod string, userAgentType string) (
-	newCtx context.Context, callInfo CallInfoMetrics, startTime time.Time, startTimeGenerated bool,
+	newCtx context.Context, callInfo CallInfoMetrics, startTime time.Time, startTimeGenerated bool, mp *MetricsParams,
 ) {
 	startTime = GetCallStartTimeFromContext(ctx)
 	if startTime.IsZero() {
@@ -268,14 +320,21 @@ func prepareCallMetrics(ctx context.Context, fullMethod string, userAgentType st
 		startTimeGenerated = true
 	}
 
+	mp = GetMetricsParamsFromContext(ctx)
+	if mp == nil {
+		mp = &MetricsParams{}
+		ctx = NewContextWithMetricsParams(ctx, mp)
+	}
+
 	service, method := splitFullMethodName(fullMethod)
 	callInfo = CallInfoMetrics{
 		Service:       service,
 		Method:        method,
 		UserAgentType: userAgentType,
+		CustomValues:  copyValues(mp.values), // we copy values here to avoid mutation during the InFlight metrics processing
 	}
 
-	return ctx, callInfo, startTime, startTimeGenerated
+	return ctx, callInfo, startTime, startTimeGenerated, mp
 }
 
 // MetricsUnaryInterceptor is an interceptor that collects metrics for incoming gRPC calls.
@@ -299,7 +358,7 @@ func MetricsUnaryInterceptor(
 			userAgentType = config.unaryUserAgentTypeProvider(ctx, info)
 		}
 
-		ctx, callInfo, startTime, _ := prepareCallMetrics(ctx, info.FullMethod, userAgentType)
+		ctx, callInfo, startTime, _, mp := prepareCallMetrics(ctx, info.FullMethod, userAgentType)
 
 		collector.IncInFlightCalls(callInfo, CallMethodTypeUnary)
 		defer collector.DecInFlightCalls(callInfo, CallMethodTypeUnary)
@@ -307,6 +366,9 @@ func MetricsUnaryInterceptor(
 		var resp interface{}
 		var err error
 		defer func() {
+			// re-extract labels from MetricsParams
+			callInfo.CustomValues = mp.values
+
 			if p := recover(); p != nil {
 				collector.ObserveCallFinish(callInfo, CallMethodTypeUnary, codes.Internal, startTime)
 				panic(p)
@@ -340,7 +402,7 @@ func MetricsStreamInterceptor(
 			userAgentType = config.streamUserAgentTypeProvider(ss.Context(), info)
 		}
 
-		ctx, callInfo, startTime, startTimeGenerated := prepareCallMetrics(ss.Context(), info.FullMethod, userAgentType)
+		ctx, callInfo, startTime, startTimeGenerated, mp := prepareCallMetrics(ss.Context(), info.FullMethod, userAgentType)
 
 		collector.IncInFlightCalls(callInfo, CallMethodTypeStream)
 		defer collector.DecInFlightCalls(callInfo, CallMethodTypeStream)
@@ -355,6 +417,9 @@ func MetricsStreamInterceptor(
 
 		var err error
 		defer func() {
+			// re-extract labels from MetricsParams
+			callInfo.CustomValues = mp.values
+
 			if p := recover(); p != nil {
 				collector.ObserveCallFinish(callInfo, CallMethodTypeStream, codes.Internal, startTime)
 				panic(p)

@@ -23,6 +23,7 @@ const (
 	ctxKeyTraceID
 	ctxKeyRequestStartTime
 	ctxKeyHTTPMetricsStatus
+	ctxKeyMetricsParams
 )
 
 func getStringFromContext(ctx context.Context, key ctxKey) string {
@@ -79,6 +80,20 @@ func GetLoggingParamsFromContext(ctx context.Context) *LoggingParams {
 		return nil
 	}
 	return value.(*LoggingParams)
+}
+
+// NewContextWithMetricsParams creates a new context with metrics params.
+func NewContextWithMetricsParams(ctx context.Context, metricsParams *MetricsParams) context.Context {
+	return context.WithValue(ctx, ctxKeyMetricsParams, metricsParams)
+}
+
+// GetMetricsParamsFromContext extracts metrics params from the context.
+func GetMetricsParamsFromContext(ctx context.Context) *MetricsParams {
+	value := ctx.Value(ctxKeyMetricsParams)
+	if value == nil {
+		return nil
+	}
+	return value.(*MetricsParams)
 }
 
 // NewContextWithTraceID creates a new context with trace id.
