@@ -53,14 +53,28 @@ type HTTPRequestMetricsOpts struct {
 
 // Opts represents options for creating HTTPServer.
 type Opts struct {
-	ServiceNameInURL   string
-	APIRoutes          map[APIVersion]APIRoute
-	RootMiddlewares    []func(http.Handler) http.Handler
-	ErrorDomain        string
-	HealthCheck        HealthCheck
+	// ServiceNameInURL is a prefix for API routes (e.g., "/api/service_name/v1").
+	ServiceNameInURL string
+	// APIRoutes is a map of API versions to their route configuration functions.
+	APIRoutes map[APIVersion]APIRoute
+	// RootMiddlewares is a list of middlewares to be applied to the root router.
+	RootMiddlewares []func(http.Handler) http.Handler
+	// ErrorDomain is used for error response formatting.
+	ErrorDomain string
+	// HealthCheck is a function that performs health check logic.
+	HealthCheck HealthCheck
+	// HealthCheckContext is a function that performs context-aware health check logic.
 	HealthCheckContext HealthCheckContext
-	MetricsHandler     http.Handler
+	// MetricsHandler is a custom handler for the /metrics endpoint (e.g., Prometheus handler).
+	MetricsHandler http.Handler
+	// HTTPRequestMetrics contains options for configuring HTTP request metrics middleware.
 	HTTPRequestMetrics HTTPRequestMetricsOpts
+	// Handler is a custom HTTP handler to use instead of the default router with middlewares.
+	// When provided, default middlewares are not applied.
+	Handler http.Handler
+	// Listener is a pre-configured network listener to use instead of creating a new one.
+	// Useful for custom listener configurations or testing with mock listeners.
+	Listener net.Listener
 }
 
 func (opts Opts) routerOpts() RouterOpts {
@@ -88,6 +102,7 @@ type HTTPServer struct {
 	Logger          log.FieldLogger
 	ShutdownTimeout time.Duration
 
+	listener                 net.Listener
 	port                     int32
 	httpServerDone           atomic.Value
 	httpReqPrometheusMetrics *middleware.HTTPRequestPrometheusMetrics
@@ -99,6 +114,10 @@ var _ service.MetricsRegisterer = (*HTTPServer)(nil)
 // New creates a new HTTPServer with predefined logging, metrics collecting,
 // recovering after panics and health-checking functionality.
 func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { //nolint // hugeParam: opts is heavy, it's ok in this case.
+	if opts.Handler != nil {
+		return newWithHandler(cfg, logger, opts.Handler, opts.Listener), nil
+	}
+
 	httpReqPromMetrics := middleware.NewHTTPRequestPrometheusMetricsWithOpts(
 		middleware.HTTPRequestPrometheusMetricsOpts{
 			Namespace:       opts.HTTPRequestMetrics.Namespace,
@@ -111,7 +130,7 @@ func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { 
 	}
 	configureRouter(router, logger, opts.routerOpts())
 
-	appSrv := NewWithHandler(cfg, logger, router)
+	appSrv := newWithHandler(cfg, logger, router, opts.Listener)
 	appSrv.httpReqPrometheusMetrics = httpReqPromMetrics
 	return appSrv, nil
 }
@@ -119,7 +138,12 @@ func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { 
 // NewWithHandler creates a new HTTPServer receiving already created http.Handler.
 // Unlike the New constructor, it doesn't add any middlewares.
 // Typical use case: create a chi.Router using NewRouter and pass it into NewWithHandler.
+// Depricated: Will be removed in the next major version. Please use New with Handler options instead.
 func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *HTTPServer {
+	return newWithHandler(cfg, logger, handler, nil)
+}
+
+func newWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler, listener net.Listener) *HTTPServer {
 	httpServer := &http.Server{
 		Addr:              cfg.Address,
 		WriteTimeout:      time.Duration(cfg.Timeouts.Write),
@@ -150,6 +174,7 @@ func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *
 		TLS:             cfg.TLS,
 		ShutdownTimeout: time.Duration(cfg.Timeouts.Shutdown),
 		HTTPRouter:      router,
+		listener:        listener,
 	}
 }
 
@@ -180,17 +205,18 @@ func (s *HTTPServer) Start(fatalError chan<- error) {
 	logger.Info("starting application HTTP server...")
 
 	var err error
-	var listener net.Listener
-	network, addr := s.NetworkAndAddr()
-	if listener, err = net.Listen(network, addr); err != nil {
-		logger.Error("application HTTP server error", log.Error(err))
-		fatalError <- err
-		return
+	if s.listener == nil {
+		network, addr := s.NetworkAndAddr()
+		if s.listener, err = net.Listen(network, addr); err != nil {
+			logger.Error("application HTTP server error", log.Error(err))
+			fatalError <- err
+			return
+		}
 	}
 
-	if listener.Addr().Network() == networkTCP {
+	if s.listener.Addr().Network() == networkTCP {
 		var portStr string
-		_, portStr, err = net.SplitHostPort(listener.Addr().String())
+		_, portStr, err = net.SplitHostPort(s.listener.Addr().String())
 		if err != nil {
 			logger.Error("unexpected format of TCP listener address: unable to split host and port", log.Error(err))
 			fatalError <- err
@@ -208,9 +234,9 @@ func (s *HTTPServer) Start(fatalError chan<- error) {
 	}
 
 	if s.TLS.Enabled {
-		err = s.HTTPServer.ServeTLS(listener, s.TLS.Certificate, s.TLS.Key)
+		err = s.HTTPServer.ServeTLS(s.listener, s.TLS.Certificate, s.TLS.Key)
 	} else {
-		err = s.HTTPServer.Serve(listener)
+		err = s.HTTPServer.Serve(s.listener)
 	}
 
 	if err != nil {
