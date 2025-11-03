@@ -261,6 +261,7 @@ type RuleConfig struct {
 	// In the code, we will have 2 middlewares that will be executed on the different steps of the HTTP request serving,
 	// and each one should do only its own throttling.
 	// We can achieve this using different tags for rules and passing needed tag in the MiddlewareOpts.
+	// Tags can also be specified per zone (on RateLimits and InFlightLimits items) for more fine-grained control.
 	Tags TagsList `mapstructure:"tags" yaml:"tags" json:"tags"`
 
 	// RateLimits contains a list of the rate limiting zones that are used in the rule.

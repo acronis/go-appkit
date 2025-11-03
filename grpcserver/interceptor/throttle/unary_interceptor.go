@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/acronis/go-appkit/grpcserver/interceptor"
+	"github.com/acronis/go-appkit/internal/throttleconfig"
 )
 
 type UnaryGetKeyFunc func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo) (key string, bypass bool, err error)
@@ -129,7 +130,7 @@ func makeUnaryRoutes(cfg *Config, opts *unaryInterceptorOptions) ([]serviceRoute
 	constructor := func(cfg *Config, rule *RuleConfig) ([]grpc.UnaryServerInterceptor, error) {
 		return makeUnaryInterceptorsForRule(cfg, rule, opts)
 	}
-	return makeServiceRoutes[grpc.UnaryServerInterceptor](cfg, opts.tags, constructor, chainUnaryInterceptors)
+	return makeServiceRoutes[grpc.UnaryServerInterceptor](cfg, constructor, chainUnaryInterceptors)
 }
 
 func chainUnaryInterceptors(interceptors []grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
@@ -153,7 +154,14 @@ func getChainUnaryHandler(
 func makeUnaryInterceptorsForRule(cfg *Config, rule *RuleConfig, opts *unaryInterceptorOptions) ([]grpc.UnaryServerInterceptor, error) {
 	var interceptors []grpc.UnaryServerInterceptor
 
+	ruleTagsMatch := throttleconfig.CheckStringSlicesIntersect(opts.tags, rule.Tags)
+
 	for _, inFlightLimit := range rule.InFlightLimits {
+		if len(opts.tags) != 0 && !ruleTagsMatch &&
+			!throttleconfig.CheckStringSlicesIntersect(opts.tags, inFlightLimit.Tags) {
+			continue
+		}
+
 		iflInterceptor, err := makeInFlightUnaryInterceptor(cfg, inFlightLimit, rule, opts)
 		if err != nil {
 			return nil, fmt.Errorf("create in-flight limit unary interceptor for zone %q: %w", inFlightLimit.Zone, err)
@@ -162,6 +170,11 @@ func makeUnaryInterceptorsForRule(cfg *Config, rule *RuleConfig, opts *unaryInte
 	}
 
 	for _, rateLimit := range rule.RateLimits {
+		if len(opts.tags) != 0 && !ruleTagsMatch &&
+			!throttleconfig.CheckStringSlicesIntersect(opts.tags, rateLimit.Tags) {
+			continue
+		}
+
 		rlInterceptor, err := makeRateLimitUnaryInterceptor(cfg, rateLimit, rule, opts)
 		if err != nil {
 			return nil, fmt.Errorf("create rate limit unary interceptor for zone %q: %w", rateLimit.Zone, err)

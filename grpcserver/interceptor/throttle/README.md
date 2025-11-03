@@ -310,6 +310,84 @@ rules:
     alias: testing_limits
 ```
 
+## Tags
+
+Tags are useful when different rules of the same configuration should be used by different interceptors. For example, suppose you want to have two different throttling rules:
+
+ 1. A rule for all requests.
+ 2. A rule for all identity-aware (authenticated) requests.
+
+Tags can be specified at two levels:
+
+### Rule-level tags
+
+Tags can be specified at the rule level. This approach is useful when you want different interceptors to process completely different sets of rules:
+
+```yaml
+rules:
+  - serviceMethods:
+      - "/myservice.PublicService/*"
+    rateLimits:
+      - zone: public_rate_limit
+    tags: ["public"]
+
+  - serviceMethods:
+      - "/myservice.UserService/*"
+    rateLimits:
+      - zone: authenticated_rate_limit
+    tags: ["authenticated"]
+```
+
+In your code, you will have two interceptors that will be executed at different steps of the gRPC request serving process. Each interceptor should only apply its own throttling rule:
+
+```go
+publicInterceptor, _ := throttle.UnaryInterceptor(cfg,
+    throttle.WithUnaryTags([]string{"public"}))
+authenticatedInterceptor, _ := throttle.UnaryInterceptor(cfg,
+    throttle.WithUnaryTags([]string{"authenticated"}))
+```
+
+### Zone-level tags
+
+You can specify tags per zone within a rule, allowing fine-grained control over which zones are applied by different interceptors. This approach avoids service method duplication when the same methods need different zones for different interceptors:
+
+```yaml
+rules:
+  - serviceMethods:
+      - "/myservice.MyService/*"
+    excludedServiceMethods:
+      - "/myservice.MyService/HealthCheck"
+      - "/myservice.MyService/Metrics"
+    rateLimits:
+      - zone: rate_limit_total
+        tags: ["all"]
+      - zone: rate_limit_identity
+        tags: ["authenticated"]
+    inFlightLimits:
+      - zone: inflight_limit_total
+        tags: ["all"]
+      - zone: inflight_limit_identity
+        tags: ["authenticated"]
+```
+
+Different interceptors can selectively apply zones based on their tags:
+
+```go
+allInterceptor, _ := throttle.UnaryInterceptor(cfg,
+    throttle.WithUnaryTags([]string{"all"}))
+authenticatedInterceptor, _ := throttle.UnaryInterceptor(cfg,
+    throttle.WithUnaryTags([]string{"authenticated"}),
+    throttle.WithUnaryGetKeyIdentity(extractUserID))
+```
+
+### Tag precedence
+
+When both rule-level and zone-level tags are specified, **rule-level tags take precedence**:
+
+- If the interceptor's tags match the rule-level tags, **all zones in that rule are applied** (regardless of zone-level tags).
+- If the interceptor's tags don't match the rule-level tags, then zone-level tags are checked for each zone individually.
+- If neither rule-level nor zone-level tags match, the rule is skipped entirely.
+
 ## Advanced Usage
 
 ### Custom Callbacks
@@ -344,44 +422,6 @@ unaryInterceptor, err := throttle.UnaryInterceptor(cfg,
         log.Printf("Rate limiting error for method %s: %v", info.FullMethod, err)
         return nil, status.Error(codes.Internal, "Throttling service temporarily unavailable")
     }),
-)
-```
-
-### Multiple Interceptor Instances with Tags
-
-```yaml
-rules:
-  - serviceMethods:
-      - "/myservice.MyService/PublicMethod"
-    rateLimits:
-      - zone: public_rate_limit
-    tags: ["public"]
-
-  - serviceMethods:
-      - "/myservice.MyService/AuthenticatedMethod"
-    rateLimits:
-      - zone: authenticated_rate_limit
-    tags: ["authenticated"]
-```
-
-```go
-// Create separate interceptors for different rule sets
-publicInterceptor, err := throttle.UnaryInterceptor(cfg,
-    throttle.WithUnaryTags([]string{"public"}),
-)
-
-authenticatedInterceptor, err := throttle.UnaryInterceptor(cfg,
-    throttle.WithUnaryTags([]string{"authenticated"}),
-    throttle.WithUnaryGetKeyIdentity(extractUserID),
-)
-
-// Use in interceptor chain
-server := grpc.NewServer(
-    grpc.ChainUnaryInterceptor(
-        publicInterceptor,
-        authenticateInterceptor, // Your authentication interceptor
-        authenticatedInterceptor,
-    ),
 )
 ```
 
@@ -491,23 +531,25 @@ rules:
     serviceMethods:
       - "/package.Service/Method"     # Exact match
       - "/package.Service/*"          # Wildcard match
-    
+
     # Excluded methods (optional)
     excludedServiceMethods:
       - "/package.Service/HealthCheck"
-    
+
     # Rate limiting zones to apply
     rateLimits:
       - zone: zone_name
-    
+        tags: ["tag1", "tag2"]  # Optional: zone-level tags
+
     # In-flight limiting zones to apply
     inFlightLimits:
       - zone: zone_name
-    
+        tags: ["tag1", "tag2"]  # Optional: zone-level tags
+
     # Rule identification
     alias: rule_name  # Used in metrics and logs
-    
-    # Tags for filtering rules
+
+    # Tags for filtering rules (optional: rule-level tags)
     tags: ["public", "authenticated"]
 ```
 

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/acronis/go-appkit/grpcserver/interceptor"
+	"github.com/acronis/go-appkit/internal/throttleconfig"
 )
 
 type StreamGetKeyFunc func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo) (key string, bypass bool, err error)
@@ -128,7 +129,7 @@ func makeStreamRoutes(cfg *Config, opts *streamInterceptorOptions) ([]serviceRou
 	constructor := func(cfg *Config, rule *RuleConfig) ([]grpc.StreamServerInterceptor, error) {
 		return makeStreamInterceptorsForRule(cfg, rule, opts)
 	}
-	return makeServiceRoutes[grpc.StreamServerInterceptor](cfg, opts.tags, constructor, chainStreamInterceptors)
+	return makeServiceRoutes[grpc.StreamServerInterceptor](cfg, constructor, chainStreamInterceptors)
 }
 
 func chainStreamInterceptors(interceptors []grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
@@ -152,7 +153,14 @@ func getChainStreamHandler(
 func makeStreamInterceptorsForRule(cfg *Config, rule *RuleConfig, opts *streamInterceptorOptions) ([]grpc.StreamServerInterceptor, error) {
 	var interceptors []grpc.StreamServerInterceptor
 
+	ruleTagsMatch := throttleconfig.CheckStringSlicesIntersect(opts.tags, rule.Tags)
+
 	for _, inFlightLimit := range rule.InFlightLimits {
+		if len(opts.tags) != 0 && !ruleTagsMatch &&
+			!throttleconfig.CheckStringSlicesIntersect(opts.tags, inFlightLimit.Tags) {
+			continue
+		}
+
 		iflInterceptor, err := makeInFlightStreamInterceptor(cfg, inFlightLimit, rule, opts)
 		if err != nil {
 			return nil, fmt.Errorf("create in-flight limit stream interceptor for zone %q: %w", inFlightLimit.Zone, err)
@@ -161,6 +169,11 @@ func makeStreamInterceptorsForRule(cfg *Config, rule *RuleConfig, opts *streamIn
 	}
 
 	for _, rateLimit := range rule.RateLimits {
+		if len(opts.tags) != 0 && !ruleTagsMatch &&
+			!throttleconfig.CheckStringSlicesIntersect(opts.tags, rateLimit.Tags) {
+			continue
+		}
+
 		rlInterceptor, err := makeRateLimitStreamInterceptor(cfg, rateLimit, rule, opts)
 		if err != nil {
 			return nil, fmt.Errorf("create rate limit stream interceptor for zone %q: %w", rateLimit.Zone, err)
