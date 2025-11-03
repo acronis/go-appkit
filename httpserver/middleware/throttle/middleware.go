@@ -142,7 +142,7 @@ func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	nextHandler.ServeHTTP(rw, r)
 }
 
-// nolint: gocyclo // we would like to have high functional cohesion here.
+// nolint: gocyclo,dupl // high cyclomatic complexity and some duplication is ok here for high functional cohesion and clarity.
 func makeRoutes(
 	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts,
 ) (routes []restapi.Route, err error) {
@@ -151,14 +151,17 @@ func makeRoutes(
 			continue
 		}
 
-		if len(opts.Tags) != 0 && !throttleconfig.CheckStringSlicesIntersect(opts.Tags, rule.Tags) {
-			continue
-		}
+		ruleTagsMatch := throttleconfig.CheckStringSlicesIntersect(opts.Tags, rule.Tags)
 
 		var middlewares []func(http.Handler) http.Handler
 
 		// Build in-flight limiting middleware.
 		for i := 0; i < len(rule.InFlightLimits); i++ {
+			if len(opts.Tags) != 0 && !ruleTagsMatch &&
+				!throttleconfig.CheckStringSlicesIntersect(opts.Tags, rule.InFlightLimits[i].Tags) {
+				continue
+			}
+
 			zoneName := rule.InFlightLimits[i].Zone
 			cfgZone, ok := cfg.InFlightLimitZones[zoneName]
 			if !ok {
@@ -175,6 +178,11 @@ func makeRoutes(
 
 		// Build rate limiting middleware.
 		for i := 0; i < len(rule.RateLimits); i++ {
+			if len(opts.Tags) != 0 && !ruleTagsMatch &&
+				!throttleconfig.CheckStringSlicesIntersect(opts.Tags, rule.RateLimits[i].Tags) {
+				continue
+			}
+
 			zoneName := rule.RateLimits[i].Zone
 			cfgZone, ok := cfg.RateLimitZones[zoneName]
 			if !ok {
@@ -187,6 +195,11 @@ func makeRoutes(
 				return nil, fmt.Errorf("make rate limit middleware for zone %q: %w", zoneName, err)
 			}
 			middlewares = append(middlewares, rateLimitMw)
+		}
+
+		// Skip the rule if no middlewares were added after filtering by tags
+		if len(middlewares) == 0 {
+			continue
 		}
 
 		for _, cfgRoute := range rule.Routes {

@@ -15,8 +15,6 @@ import (
 
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
-
-	"github.com/acronis/go-appkit/internal/throttleconfig"
 )
 
 type serviceRoute[T any] struct {
@@ -73,17 +71,12 @@ func (rm *serviceRouteManager[T]) SearchMatchedRouteForRequest(fullMethod string
 
 func makeServiceRoutes[T any](
 	cfg *Config,
-	tags []string,
 	constructor func(cfg *Config, rule *RuleConfig) ([]T, error),
 	chain func(interceptors []T) T,
 ) ([]serviceRoute[T], error) {
 	var routes []serviceRoute[T]
 	for i := range cfg.Rules {
 		rule := &cfg.Rules[i]
-
-		if len(tags) != 0 && !throttleconfig.CheckStringSlicesIntersect(tags, rule.Tags) {
-			continue
-		}
 
 		interceptors, err := constructor(cfg, rule)
 		if err != nil {

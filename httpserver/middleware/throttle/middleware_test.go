@@ -550,6 +550,81 @@ rules:
 				checkNoRateLimiting(t, cfg, reqsMismatchGen, 30, "tag_a")
 			},
 		},
+		{
+			Name: "tags usage (zone level)",
+			CfgData: `
+rateLimitZones:
+  rl_zone1:
+    rateLimit: 1/m
+    burstLimit: 10
+    responseStatusCode: 503
+    responseRetryAfter: 5s
+  rl_zone2:
+    rateLimit: 2/m
+    burstLimit: 5
+    responseStatusCode: 429
+    responseRetryAfter: 10s
+rules:
+  - routes:
+    - path: "/aaa"
+      methods: POST, PUT,DELETE
+    - path: "= /bbb"
+    rateLimits:
+      - zone: rl_zone1
+        tags: tag_a
+      - zone: rl_zone2
+        tags: tag_b
+`,
+			Func: func(t *testing.T, cfg *Config) {
+				reqsMatchGen := makeReqsGenerator(matchedPrefixedRoutes)
+
+				// Tags match only rl_zone1 (tag_a).
+				checkRateLimiting(t, cfg, reqsMatchGen, 11, 30, 503, time.Second*5, "tag_a")
+
+				// Tags match only rl_zone2 (tag_b).
+				checkRateLimiting(t, cfg, reqsMatchGen, 6, 30, 429, time.Second*10, "tag_b")
+
+				// Tags mismatch - no rate limiting should be applied.
+				checkNoRateLimiting(t, cfg, reqsMatchGen, 30, "tag_c")
+			},
+		},
+		{
+			Name: "tags usage (rule-level tags take precedence)",
+			CfgData: `
+rateLimitZones:
+  rl_zone_with_zone_tag:
+    rateLimit: 1/m
+    burstLimit: 10
+    responseStatusCode: 503
+    responseRetryAfter: 5s
+rules:
+  - routes:
+    - path: "/aaa"
+      methods: POST, PUT,DELETE
+    - path: "= /bbb"
+    rateLimits:
+      - zone: rl_zone_with_zone_tag
+        tags: tag_zone_mismatch
+    tags: tag_rule
+`,
+			Func: func(t *testing.T, cfg *Config) {
+				const burst = 10
+				reqsMatchGen := makeReqsGenerator(matchedPrefixedRoutes)
+
+				// Middleware provides "tag_rule" which matches rule-level tag.
+				// Zone should be included even though its zone-level tag "tag_zone_mismatch" doesn't match.
+				// This proves rule-level tag match takes precedence.
+				checkRateLimiting(t, cfg, reqsMatchGen, burst+1, 30, 503, time.Second*5, "tag_rule")
+
+				// Middleware provides "tag_zone_mismatch" which matches zone-level tag but NOT rule-level tag.
+				// Zone should be included because zone tag matches.
+				checkRateLimiting(t, cfg, reqsMatchGen, burst+1, 30, 503, time.Second*5, "tag_zone_mismatch")
+
+				// Middleware provides "tag_none" which matches neither rule nor zone tags.
+				// No zones should be included.
+				checkNoRateLimiting(t, cfg, reqsMatchGen, 30, "tag_none")
+			},
+		},
 	}
 	configLoader := config.NewLoader(config.NewViperAdapter())
 	for _, tt := range tests {

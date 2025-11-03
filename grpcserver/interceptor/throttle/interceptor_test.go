@@ -168,7 +168,7 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_RateLimitBasicFun
 	}
 
 	logger := logtest.NewRecorder()
-	_, client, closeSvc, err := s.setupTestServiceWithMetrics(logger, cfg, mockCollector)
+	_, client, closeSvc, err := s.setupTestService(logger, cfg, withMetricsCollector(mockCollector))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
@@ -220,7 +220,7 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_InFlightLimitBasi
 	}
 
 	logger := logtest.NewRecorder()
-	svc, client, closeSvc, err := s.setupTestServiceWithMetrics(logger, cfg, mockCollector)
+	svc, client, closeSvc, err := s.setupTestService(logger, cfg, withMetricsCollector(mockCollector))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
@@ -568,7 +568,7 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_RateLimitDryRun()
 	}
 
 	logger := logtest.NewRecorder()
-	_, client, closeSvc, err := s.setupTestServiceWithMetrics(logger, cfg, mockCollector)
+	_, client, closeSvc, err := s.setupTestService(logger, cfg, withMetricsCollector(mockCollector))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
@@ -614,7 +614,7 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_InFlightLimitDryR
 	}
 
 	logger := logtest.NewRecorder()
-	svc, client, closeSvc, err := s.setupTestServiceWithMetrics(logger, cfg, mockCollector)
+	svc, client, closeSvc, err := s.setupTestService(logger, cfg, withMetricsCollector(mockCollector))
 	s.Require().NoError(err)
 	defer func() { s.Require().NoError(closeSvc()) }()
 
@@ -963,6 +963,220 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_Tags() {
 		_, recvErr2 := stream2.Recv()
 		s.Require().Error(recvErr2)
 		s.Require().Equal(codes.ResourceExhausted, status.Code(recvErr2))
+	}
+}
+
+func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_ZoneLevelTags() {
+	cfg := &Config{
+		RateLimitZones: map[string]RateLimitZoneConfig{
+			"zone_a": {
+				RateLimit: RateLimitValue{Count: 1, Duration: time.Second},
+				ZoneConfig: ZoneConfig{
+					Key: ZoneKeyConfig{Type: ZoneKeyTypeNoKey},
+				},
+			},
+		},
+		Rules: []RuleConfig{
+			{
+				ServiceMethods: []string{"/grpc.testing.TestService/*"},
+				RateLimits: []RuleRateLimit{
+					{Zone: "zone_a", Tags: TagsList{"tag_a"}},
+				},
+			},
+		},
+	}
+
+	logger := logtest.NewRecorder()
+
+	// Test 1: tag_a matches zone_a rate limit
+	_, client, closeSvc, err := s.setupTestService(logger, cfg, withTags([]string{"tag_a"}))
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc()) }()
+
+	if s.IsUnary {
+		_, err = client.UnaryCall(context.Background(), &grpc_testing.SimpleRequest{})
+		s.Require().NoError(err, "first request should succeed")
+		_, err = client.UnaryCall(context.Background(), &grpc_testing.SimpleRequest{})
+		s.Require().Error(err, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(err))
+	} else {
+		stream, streamErr := client.StreamingOutputCall(context.Background(), &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr)
+		_, recvErr := stream.Recv()
+		s.Require().NoError(recvErr, "first request should succeed")
+
+		stream2, streamErr2 := client.StreamingOutputCall(context.Background(), &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr2)
+		_, recvErr2 := stream2.Recv()
+		s.Require().Error(recvErr2, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(recvErr2))
+	}
+
+	// Test 2: tag_b (no match) - should not apply any limits
+	_, client2, closeSvc2, err := s.setupTestService(logger, cfg, withTags([]string{"tag_b"}))
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc2()) }()
+
+	if s.IsUnary {
+		for i := 0; i < 5; i++ {
+			_, unaryErr := client2.UnaryCall(context.Background(), &grpc_testing.SimpleRequest{})
+			s.Require().NoError(unaryErr, "request %d should succeed", i+1)
+		}
+	} else {
+		for i := 0; i < 5; i++ {
+			stream, streamErr := client2.StreamingOutputCall(context.Background(), &grpc_testing.StreamingOutputCallRequest{})
+			s.Require().NoError(streamErr, "stream %d should be created", i+1)
+			_, recvErr := stream.Recv()
+			s.Require().NoError(recvErr, "stream %d should receive", i+1)
+		}
+	}
+}
+
+func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_RuleLevelTagsPrecedence() {
+	cfg := &Config{
+		RateLimitZones: map[string]RateLimitZoneConfig{
+			"test_zone": {
+				RateLimit: RateLimitValue{Count: 1, Duration: time.Second},
+				ZoneConfig: ZoneConfig{
+					Key: ZoneKeyConfig{Type: ZoneKeyTypeNoKey},
+				},
+			},
+		},
+		Rules: []RuleConfig{
+			{
+				ServiceMethods: []string{"/grpc.testing.TestService/*"},
+				Tags:           TagsList{"tag_rule"},
+				RateLimits:     []RuleRateLimit{{Zone: "test_zone", Tags: TagsList{"tag_zone"}}},
+			},
+		},
+	}
+
+	logger := logtest.NewRecorder()
+
+	// Test with tag_rule - should apply zone even though zone has tag_zone
+	var serverOptions []grpc.ServerOption
+	if s.IsUnary {
+		unaryInterceptor, err := UnaryInterceptor(cfg, WithUnaryTags([]string{"tag_rule"}))
+		s.Require().NoError(err)
+		loggingInterceptor := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+			return handler(interceptor.NewContextWithLogger(ctx, logger), req)
+		}
+		serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(loggingInterceptor, unaryInterceptor))
+	} else {
+		streamInterceptor, err := StreamInterceptor(cfg, WithStreamTags([]string{"tag_rule"}))
+		s.Require().NoError(err)
+		loggingInterceptor := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			wrappedStream := &interceptor.WrappedServerStream{ServerStream: ss, Ctx: interceptor.NewContextWithLogger(ss.Context(), logger)}
+			return handler(srv, wrappedStream)
+		}
+		serverOptions = append(serverOptions, grpc.ChainStreamInterceptor(loggingInterceptor, streamInterceptor))
+	}
+
+	_, client, closeSvc, err := startTestService(serverOptions, nil)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc()) }()
+
+	reqCtx := context.Background()
+
+	// First request succeeds, second fails (rate limiting 1/s)
+	if s.IsUnary {
+		_, err = client.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+		s.Require().NoError(err, "first request should succeed")
+		_, err = client.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+		s.Require().Error(err, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(err))
+	} else {
+		stream, streamErr := client.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr)
+		_, recvErr := stream.Recv()
+		s.Require().NoError(recvErr, "first request should succeed")
+
+		stream2, streamErr2 := client.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr2)
+		_, recvErr2 := stream2.Recv()
+		s.Require().Error(recvErr2, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(recvErr2))
+	}
+
+	// Test with tag_zone - should also apply zone (zone tag matches)
+	var serverOptions2 []grpc.ServerOption
+	if s.IsUnary {
+		unaryInterceptor2, err := UnaryInterceptor(cfg, WithUnaryTags([]string{"tag_zone"}))
+		s.Require().NoError(err)
+		loggingInterceptor2 := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+			return handler(interceptor.NewContextWithLogger(ctx, logger), req)
+		}
+		serverOptions2 = append(serverOptions2, grpc.ChainUnaryInterceptor(loggingInterceptor2, unaryInterceptor2))
+	} else {
+		streamInterceptor2, err := StreamInterceptor(cfg, WithStreamTags([]string{"tag_zone"}))
+		s.Require().NoError(err)
+		loggingInterceptor2 := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			wrappedStream := &interceptor.WrappedServerStream{ServerStream: ss, Ctx: interceptor.NewContextWithLogger(ss.Context(), logger)}
+			return handler(srv, wrappedStream)
+		}
+		serverOptions2 = append(serverOptions2, grpc.ChainStreamInterceptor(loggingInterceptor2, streamInterceptor2))
+	}
+
+	_, client2, closeSvc2, err := startTestService(serverOptions2, nil)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc2()) }()
+
+	// First request succeeds, second fails (rate limiting 1/s)
+	if s.IsUnary {
+		_, err = client2.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+		s.Require().NoError(err, "first request should succeed")
+		_, err = client2.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+		s.Require().Error(err, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(err))
+	} else {
+		stream, streamErr := client2.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr)
+		_, recvErr := stream.Recv()
+		s.Require().NoError(recvErr, "first request should succeed")
+
+		stream2, streamErr2 := client2.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+		s.Require().NoError(streamErr2)
+		_, recvErr2 := stream2.Recv()
+		s.Require().Error(recvErr2, "second request should fail")
+		s.Require().Equal(codes.ResourceExhausted, status.Code(recvErr2))
+	}
+
+	// Test with tag_none - should not apply any zones
+	var serverOptions3 []grpc.ServerOption
+	if s.IsUnary {
+		unaryInterceptor3, err := UnaryInterceptor(cfg, WithUnaryTags([]string{"tag_none"}))
+		s.Require().NoError(err)
+		loggingInterceptor3 := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+			return handler(interceptor.NewContextWithLogger(ctx, logger), req)
+		}
+		serverOptions3 = append(serverOptions3, grpc.ChainUnaryInterceptor(loggingInterceptor3, unaryInterceptor3))
+	} else {
+		streamInterceptor3, err := StreamInterceptor(cfg, WithStreamTags([]string{"tag_none"}))
+		s.Require().NoError(err)
+		loggingInterceptor3 := func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			wrappedStream := &interceptor.WrappedServerStream{ServerStream: ss, Ctx: interceptor.NewContextWithLogger(ss.Context(), logger)}
+			return handler(srv, wrappedStream)
+		}
+		serverOptions3 = append(serverOptions3, grpc.ChainStreamInterceptor(loggingInterceptor3, streamInterceptor3))
+	}
+
+	_, client3, closeSvc3, err := startTestService(serverOptions3, nil)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc3()) }()
+
+	// All requests should succeed (no matching tags)
+	if s.IsUnary {
+		for i := 0; i < 5; i++ {
+			_, unaryErr := client3.UnaryCall(reqCtx, &grpc_testing.SimpleRequest{})
+			s.Require().NoError(unaryErr, "request %d should succeed", i+1)
+		}
+	} else {
+		for i := 0; i < 5; i++ {
+			stream, streamErr := client3.StreamingOutputCall(reqCtx, &grpc_testing.StreamingOutputCallRequest{})
+			s.Require().NoError(streamErr, "stream %d should be created", i+1)
+			_, recvErr := stream.Recv()
+			s.Require().NoError(recvErr, "stream %d should receive", i+1)
+		}
 	}
 }
 
@@ -1991,20 +2205,41 @@ func (s *ThrottleInterceptorTestSuite) TestThrottleInterceptor_RateLimitByHeader
 	}
 }
 
-func (s *ThrottleInterceptorTestSuite) setupTestService(
-	logger *logtest.Recorder, cfg *Config,
-) (grpcTestService, grpc_testing.TestServiceClient, func() error, error) {
-	return s.setupTestServiceWithMetrics(logger, cfg, nil)
+type testServiceOption func(o *testServiceOptions)
+
+func withTags(tags []string) testServiceOption {
+	return func(o *testServiceOptions) {
+		o.tags = tags
+	}
 }
 
-func (s *ThrottleInterceptorTestSuite) setupTestServiceWithMetrics(
-	logger *logtest.Recorder, cfg *Config, metricsCollector MetricsCollector,
+func withMetricsCollector(mc MetricsCollector) testServiceOption {
+	return func(o *testServiceOptions) {
+		o.mc = mc
+	}
+}
+
+type testServiceOptions struct {
+	mc   MetricsCollector
+	tags []string
+}
+
+func (s *ThrottleInterceptorTestSuite) setupTestService(
+	logger *logtest.Recorder, cfg *Config, options ...testServiceOption,
 ) (grpcTestService, grpc_testing.TestServiceClient, func() error, error) {
+	var opts testServiceOptions
+	for _, o := range options {
+		o(&opts)
+	}
+
 	var serverOptions []grpc.ServerOption
 	if s.IsUnary {
 		var interceptorOpts []UnaryInterceptorOption
-		if metricsCollector != nil {
-			interceptorOpts = append(interceptorOpts, WithUnaryMetricsCollector(metricsCollector))
+		if opts.mc != nil {
+			interceptorOpts = append(interceptorOpts, WithUnaryMetricsCollector(opts.mc))
+		}
+		if len(opts.tags) != 0 {
+			interceptorOpts = append(interceptorOpts, WithUnaryTags(opts.tags))
 		}
 		unaryInterceptor, err := UnaryInterceptor(cfg, interceptorOpts...)
 		if err != nil {
@@ -2016,8 +2251,11 @@ func (s *ThrottleInterceptorTestSuite) setupTestServiceWithMetrics(
 		serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(loggingInterceptor, unaryInterceptor))
 	} else {
 		var interceptorOpts []StreamInterceptorOption
-		if metricsCollector != nil {
-			interceptorOpts = append(interceptorOpts, WithStreamMetricsCollector(metricsCollector))
+		if opts.mc != nil {
+			interceptorOpts = append(interceptorOpts, WithStreamMetricsCollector(opts.mc))
+		}
+		if len(opts.tags) != 0 {
+			interceptorOpts = append(interceptorOpts, WithStreamTags(opts.tags))
 		}
 		streamInterceptor, err := StreamInterceptor(cfg, interceptorOpts...)
 		if err != nil {

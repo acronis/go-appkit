@@ -64,12 +64,14 @@ func (c *ZoneKeyConfig) Validate() error {
 
 // RuleRateLimit represents rule's rate limiting parameters.
 type RuleRateLimit struct {
-	Zone string `mapstructure:"zone" yaml:"zone"`
+	Zone string   `mapstructure:"zone" yaml:"zone" json:"zone"`
+	Tags TagsList `mapstructure:"tags" yaml:"tags" json:"tags"`
 }
 
 // RuleInFlightLimit represents rule's in-flight limiting parameters.
 type RuleInFlightLimit struct {
-	Zone string `mapstructure:"zone" yaml:"zone"`
+	Zone string   `mapstructure:"zone" yaml:"zone" json:"zone"`
+	Tags TagsList `mapstructure:"tags" yaml:"tags" json:"tags"`
 }
 
 // RateLimitRetryAfterValue represents structured retry-after value for rate limiting.

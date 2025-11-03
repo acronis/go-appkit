@@ -214,6 +214,12 @@ Tags are useful when different rules of the same configuration should be used by
  1. A rule for all requests.
  2. A rule for all identity-aware (authorized) requests.
 
+Tags can be specified at two levels:
+
+### Rule-level tags
+
+Tags can be specified at the rule level. This approach is useful when you want different middlewares to process completely different sets of rules:
+
 ```yaml
 # ...
 rules:
@@ -246,6 +252,46 @@ In your code, you will have two middlewares that will be executed at different s
 allMw := MiddlewareWithOpts(cfg, "my-app-domain", throttleMetrics, MiddlewareOpts{Tags: []string{"all_reqs"}})
 requireAuthMw := MiddlewareWithOpts(cfg, "my-app-domain", throttleMetrics, MiddlewareOpts{Tags: []string{"require_auth_reqs"}})
 ```
+
+### Zone-level tags
+
+You can specify tags per zone within a rule, allowing fine-grained control over which zones are applied by different middlewares. This approach avoids route duplication when the same routes need different zones for different middlewares:
+
+```yaml
+# ...
+rules:
+  - routes:
+    - path: "/"
+    excludedRoutes:
+    - path: "/healthz"
+    - path: "/metrics"
+    rateLimits:
+      - zone: rl_total
+        tags: all_reqs
+      - zone: rl_identity
+        tags: authn_reqs
+    inFlightLimits:
+      - zone: ifl_total
+        tags: all_reqs
+      - zone: ifl_identity
+        tags: authn_reqs
+# ...
+```
+
+Different middlewares can selectively apply zones based on their tags:
+
+```go
+allMw := MiddlewareWithOpts(cfg, "my-app-domain", throttleMetrics, MiddlewareOpts{Tags: []string{"all_reqs"}})
+authnMw := MiddlewareWithOpts(cfg, "my-app-domain", throttleMetrics, MiddlewareOpts{Tags: []string{"authn_reqs"}})
+```
+
+### Tag precedence
+
+When both rule-level and zone-level tags are specified, **rule-level tags take precedence**:
+
+- If the middleware's tags match the rule-level tags, **all zones in that rule are applied** (regardless of zone-level tags).
+- If the middleware's tags don't match the rule-level tags, then zone-level tags are checked for each zone individually.
+- If neither rule-level nor zone-level tags match, the rule is skipped entirely.
 
 ## Dry-run mode
 
