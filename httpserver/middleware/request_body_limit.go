@@ -28,7 +28,7 @@ func RequestBodyLimit(maxSizeBytes uint64, errDomain string) func(next http.Hand
 }
 
 func (h *requestBodyLimitHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	if r.ContentLength > int64(h.maxSizeBytes) {
+	if r.ContentLength > int64(h.maxSizeBytes) { //nolint:gosec // maxSizeBytes is a reasonable value
 		reqErr := restapi.NewTooLargeMalformedRequestError(h.maxSizeBytes)
 		restapi.RespondMalformedRequestError(rw, h.errorDomain, reqErr, GetLoggerFromContext(r.Context()))
 		return

@@ -98,7 +98,7 @@ func NewMasker(rules []MaskingRuleConfig) *Masker {
 }
 
 func stringToBytes(s string) []byte {
-	return *(*[]byte)(unsafe.Pointer(&s)) // nolint: gosec // reduce number of allocations
+	return *(*[]byte)(unsafe.Pointer(&s)) //nolint:gosec // reduce number of allocations
 }
 
 // Mask applies the appropriate masking function to the input string.

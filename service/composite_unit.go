@@ -35,7 +35,7 @@ func (cu *CompositeUnit) Start(fatalError chan<- error) {
 	}
 
 	ok := make(chan bool, len(cu.Units))
-	runningOrFailedUnits := int32(len(cu.Units))
+	runningOrFailedUnits := int32(len(cu.Units)) //nolint:gosec // unit count is reasonable
 	for i := 0; i < len(cu.Units); i++ {
 		go func(i int) {
 			cu.Units[i].Start(fatalErrs[i])

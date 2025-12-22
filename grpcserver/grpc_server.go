@@ -131,11 +131,11 @@ func New(cfg *Config, logger log.FieldLogger, options ...Option) (*GRPCServer, e
 		serverOpts = append(serverOpts, grpc.MaxConcurrentStreams(cfg.Limits.MaxConcurrentStreams))
 	}
 	if cfg.Limits.MaxRecvMessageSize > 0 {
-		maxRecvMsgSize := int(cfg.Limits.MaxRecvMessageSize)
+		maxRecvMsgSize := int(cfg.Limits.MaxRecvMessageSize) //nolint:gosec // config value validated
 		serverOpts = append(serverOpts, grpc.MaxRecvMsgSize(maxRecvMsgSize))
 	}
 	if cfg.Limits.MaxSendMessageSize > 0 {
-		maxSendMsgSize := int(cfg.Limits.MaxSendMessageSize)
+		maxSendMsgSize := int(cfg.Limits.MaxSendMessageSize) //nolint:gosec // config value validated
 		serverOpts = append(serverOpts, grpc.MaxSendMsgSize(maxSendMsgSize))
 	}
 

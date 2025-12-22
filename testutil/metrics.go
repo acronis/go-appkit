@@ -28,7 +28,7 @@ func AssertSamplesCountInHistogram(t assert.TestingT, hist prometheus.Histogram,
 	if !assert.Equal(t, 1, len(gotMetrics)) {
 		return false
 	}
-	return assert.Equal(t, wantSamplesCount, int(gotMetrics[0].GetMetric()[0].Histogram.GetSampleCount()))
+	return assert.Equal(t, wantSamplesCount, int(gotMetrics[0].GetMetric()[0].Histogram.GetSampleCount())) //nolint:gosec // test helper
 }
 
 // RequireSamplesCountInHistogram calls AssertSamplesCountInHistogram and fail test immediately in case of error.

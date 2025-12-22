@@ -63,7 +63,7 @@ type Config struct {
 
 	// InFlightLimitZones contains in-flight limiting zones.
 	// Key is a zone's name, and value is a zone's configuration.
-	InFlightLimitZones map[string]InFlightLimitZoneConfig `mapstructure:"inFlightLimitZones" yaml:"inFlightLimitZones" json:"inFlightLimitZones"` //nolint:lll
+	InFlightLimitZones map[string]InFlightLimitZoneConfig `mapstructure:"inFlightLimitZones" yaml:"inFlightLimitZones" json:"inFlightLimitZones"` //nolint:lll // struct tags must be on one line
 
 	// Rules contains list of so-called throttling rules.
 	// Basically, throttling rule represents a route (or multiple routes),

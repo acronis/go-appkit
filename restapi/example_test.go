@@ -114,8 +114,8 @@ func (c *ExampleServiceClient) Delete(id string) error {
 func ExampleClient() {
 	logger := log.NewDisabledLogger()
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost:
+		switch r.Method {
+		case http.MethodPost:
 			resp := ExampleClientResponse{"123"}
 			buf, err := json.Marshal(resp)
 			if err != nil {
@@ -129,7 +129,7 @@ func ExampleClient() {
 			}
 			rw.WriteHeader(http.StatusOK)
 
-		case r.Method == http.MethodDelete:
+		case http.MethodDelete:
 			rw.WriteHeader(http.StatusNoContent)
 		default:
 			rw.WriteHeader(http.StatusMethodNotAllowed)

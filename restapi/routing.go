@@ -213,6 +213,8 @@ func (r *RoutesManager) SearchMatchedRouteForRequest(req *http.Request) (Route, 
 // Path should be normalized (see NormalizeURLPath for this).
 // If the excluded arg is true, search will be done only among excluded routes. If false - only among included routes.
 // nolint:gocyclo
+//
+//nolint:gocritic,gocyclo // acceptable cyclomatic complexity for routing logic
 func (r *RoutesManager) SearchRoute(normalizedPath string, method string, excluded bool) (Route, bool) {
 	reqMethodMatchesRoute := func(route *Route) bool {
 		if len(route.Methods) == 0 {

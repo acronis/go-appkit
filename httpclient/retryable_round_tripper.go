@@ -149,7 +149,8 @@ func NewRetryableRoundTripperWithOpts(
 }
 
 // RoundTrip performs request with retry logic.
-// nolint: gocyclo
+//
+//nolint:gocyclo // retry logic requires complex control flow
 func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	rewindReqBody := func(r *http.Request) error { return nil }
 	if req.Body != nil {
