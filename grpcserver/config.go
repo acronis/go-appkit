@@ -211,7 +211,7 @@ func (l *LimitsConfig) Set(dp config.DataProvider) error {
 	if maxConcurrentStreams < 0 {
 		return dp.WrapKeyErr(cfgKeyServerMaxConcurrentStreams, fmt.Errorf("cannot be negative"))
 	}
-	l.MaxConcurrentStreams = uint32(maxConcurrentStreams)
+	l.MaxConcurrentStreams = uint32(maxConcurrentStreams) //nolint:gosec // validated non-negative above
 
 	if l.MaxRecvMessageSize, err = dp.GetSizeInBytes(cfgKeyServerMaxRecvMessageSize); err != nil {
 		return dp.WrapKeyErr(cfgKeyServerMaxRecvMessageSize, err)

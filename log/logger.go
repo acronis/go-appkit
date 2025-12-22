@@ -26,7 +26,8 @@ type Field = logf.Field
 type CloseFunc logf.ChannelWriterCloseFunc
 
 // LogFunc allows logging a message with a bound level.
-// nolint: revive
+//
+//nolint:revive // LogFunc is a valid exported type name
 type LogFunc = logf.LogFunc
 
 // Error returns a new Field with the given error. Key is 'error'.
@@ -236,7 +237,7 @@ func makeLogfAppender(cfg *Config) logf.Appender {
 	case OutputFile:
 		writer := &lumberjack.Logger{
 			Filename:   resolvePlaceholders(cfg.File.Path),
-			MaxSize:    int(cfg.File.Rotation.MaxSize / 1024 / 1024),
+			MaxSize:    int(cfg.File.Rotation.MaxSize / 1024 / 1024), //nolint:gosec // division result fits in int
 			MaxBackups: cfg.File.Rotation.MaxBackups,
 			MaxAge:     cfg.File.Rotation.MaxAgeDays,
 			Compress:   cfg.File.Rotation.Compress,

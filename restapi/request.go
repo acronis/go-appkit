@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"strings"
@@ -51,7 +52,11 @@ func (r *maxBytesReader) Read(p []byte) (n int, err error) {
 // SetRequestMaxBodySize wraps request body with a reader which limit the number of bytes to read.
 // RequestBodyTooLargeError will be returned when maxSizeBytes is exceeded.
 func SetRequestMaxBodySize(w http.ResponseWriter, r *http.Request, maxSizeBytes uint64) {
-	r.Body = &maxBytesReader{ReadCloser: http.MaxBytesReader(w, r.Body, int64(maxSizeBytes)), n: maxSizeBytes}
+	maxBytes := int64(maxSizeBytes)
+	if maxSizeBytes > math.MaxInt64 {
+		maxBytes = math.MaxInt64
+	}
+	r.Body = &maxBytesReader{ReadCloser: http.MaxBytesReader(w, r.Body, maxBytes), n: maxSizeBytes}
 }
 
 // MalformedRequestError is an error that occurs in case of incorrect request.

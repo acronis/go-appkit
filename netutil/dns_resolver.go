@@ -41,7 +41,7 @@ import (
 func NewCustomDNSResolver(addrs []string, timeout time.Duration) net.Resolver {
 	var (
 		idx      = uint32(0)
-		addrsLen = uint32(len(addrs))
+		addrsLen = uint32(len(addrs)) //nolint:gosec // address count is reasonable
 	)
 
 	return net.Resolver{

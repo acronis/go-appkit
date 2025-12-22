@@ -93,13 +93,15 @@ var stringSliceType = reflect.TypeOf([]string{})
 
 // maskFields masks secrets in log fields
 // nolint: funlen,gocyclo
+//
+//nolint:funlen,gocritic,gocyclo // masking logic has unavoidable complexity
 func (l MaskingLogger) maskFields(fields []Field) []Field {
 	var changedFields []*Field
 	for i, field := range fields {
 		field := field // Important when working with unsafe.Pointer
 		switch field.Type {
 		case logf.FieldTypeBytesToString:
-			s := *(*string)(unsafe.Pointer(&field.Bytes)) // nolint: gosec
+			s := *(*string)(unsafe.Pointer(&field.Bytes)) //nolint:gosec // needed for efficient string extraction from bytes
 			masked := l.masker.Mask(s)
 			if masked != s {
 				if changedFields == nil {

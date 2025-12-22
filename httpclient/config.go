@@ -185,7 +185,8 @@ type RetriesConfig struct {
 
 // GetPolicy returns a retry policy based on strategy or nil if none is provided.
 func (c *RetriesConfig) GetPolicy() retry.Policy {
-	if c.Policy == RetryPolicyExponential {
+	switch c.Policy {
+	case RetryPolicyExponential:
 		return retry.PolicyFunc(func() backoff.BackOff {
 			bf := backoff.NewExponentialBackOff()
 			bf.InitialInterval = time.Duration(c.ExponentialBackoff.InitialInterval)
@@ -193,7 +194,7 @@ func (c *RetriesConfig) GetPolicy() retry.Policy {
 			bf.Reset()
 			return bf
 		})
-	} else if c.Policy == RetryPolicyConstant {
+	case RetryPolicyConstant:
 		return retry.PolicyFunc(func() backoff.BackOff {
 			bf := backoff.NewConstantBackOff(time.Duration(c.ConstantBackoff.Interval))
 			bf.Reset()

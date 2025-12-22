@@ -142,7 +142,7 @@ func (h *handler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	nextHandler.ServeHTTP(rw, r)
 }
 
-// nolint: gocyclo,dupl // high cyclomatic complexity and some duplication is ok here for high functional cohesion and clarity.
+//nolint:gocyclo,dupl // high cyclomatic complexity and some duplication is ok here for high functional cohesion and clarity
 func makeRoutes(
 	cfg *Config, errDomain string, mc MetricsCollector, opts MiddlewareOpts,
 ) (routes []restapi.Route, err error) {
@@ -402,7 +402,7 @@ func InFlightLimitMiddlewareWithOpts(
 	})
 }
 
-// nolint: gocyclo // we would like to have high functional cohesion here.
+//nolint:gocyclo // we would like to have high functional cohesion here.
 func makeGetKeyFunc(
 	cfg ZoneKeyConfig,
 	getKeyIdentity func(r *http.Request) (string, bool, error),

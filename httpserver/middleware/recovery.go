@@ -48,7 +48,7 @@ func (h *recoveryHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			logger := GetLoggerFromContext(r.Context())
 
 			if p == http.ErrAbortHandler {
-				// nolint:lll
+				//nolint:lll // comment explaining ErrAbortHandler behavior with GitHub URLs
 				// ErrAbortHandler is a sentinel panic for aborting a handler.
 				// Stack trace is not logged in http.Server
 				// (https://github.com/golang/go/blob/a0d6420d8be2ae7164797051ec74fa2a2df466a1/src/net/http/server.go#L1761-L1775)
