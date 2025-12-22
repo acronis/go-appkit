@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 
 	"github.com/acronis/go-appkit/config"
 	"github.com/acronis/go-appkit/internal/throttleconfig"
