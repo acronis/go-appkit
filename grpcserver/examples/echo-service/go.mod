@@ -1,11 +1,9 @@
 module github.com/acronis/go-appkit/grpcserver/examples/echo-service
 
-replace github.com/acronis/go-appkit v1.18.0 => ../../..
-
 go 1.20
 
 require (
-	github.com/acronis/go-appkit v1.18.0
+	github.com/acronis/go-appkit v1.27.0
 	github.com/prometheus/client_golang v1.20.5
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.36.6

@@ -11,7 +11,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/go-viper/mapstructure/v2"
 )
 
 // DataType is a type of data format in which configuration may be described.
