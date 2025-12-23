@@ -9,7 +9,6 @@ package middleware
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,11 +21,6 @@ const (
 	httpRequestMetricsLabelRoutePattern  = "route_pattern"
 	httpRequestMetricsLabelUserAgentType = "user_agent_type"
 	httpRequestMetricsLabelStatusCode    = "status_code"
-)
-
-const (
-	userAgentTypeBrowser    = "browser"
-	userAgentTypeHTTPClient = "http-client"
 )
 
 // HTTPRequestInfoMetrics represents a request info for collecting metrics.
@@ -221,6 +215,7 @@ type UserAgentTypeGetterFunc func(r *http.Request) string
 
 // HTTPRequestMetricsOpts represents an options for HTTPRequestMetrics middleware.
 type HTTPRequestMetricsOpts struct {
+	// Deprecated: GetUserAgentType be removed in the next major version. Please use CustomLabels with Context instead.
 	GetUserAgentType  UserAgentTypeGetterFunc
 	ExcludedEndpoints []string
 }
@@ -248,9 +243,6 @@ func HTTPRequestMetricsWithOpts(
 	if getRoutePattern == nil {
 		panic("function for getting route pattern cannot be nil")
 	}
-	if opts.GetUserAgentType == nil {
-		opts.GetUserAgentType = determineUserAgentType
-	}
 	return func(next http.Handler) http.Handler {
 		return &httpRequestMetricsHandler{next: next, collector: collector, getRoutePattern: getRoutePattern, opts: opts}
 	}
@@ -277,10 +269,12 @@ func (h *httpRequestMetricsHandler) ServeHTTP(rw http.ResponseWriter, r *http.Re
 	}
 
 	reqInfo := HTTPRequestInfoMetrics{
-		Method:        r.Method,
-		RoutePattern:  h.getRoutePattern(r),
-		UserAgentType: h.opts.GetUserAgentType(r),
-		CustomValues:  copyValues(mp.values), // we copy values here to avoid mutation during the InFlight metrics processing
+		Method:       r.Method,
+		RoutePattern: h.getRoutePattern(r),
+		CustomValues: copyValues(mp.values), // we copy values here to avoid mutation during the InFlight metrics processing
+	}
+	if h.opts.GetUserAgentType != nil {
+		reqInfo.UserAgentType = h.opts.GetUserAgentType(r)
 	}
 
 	h.collector.IncInFlightRequests(reqInfo)
@@ -323,11 +317,4 @@ func copyValues(src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
-}
-
-func determineUserAgentType(r *http.Request) string {
-	if strings.Contains(strings.ToLower(r.UserAgent()), "mozilla") {
-		return userAgentTypeBrowser
-	}
-	return userAgentTypeHTTPClient
 }
