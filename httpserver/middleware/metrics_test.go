@@ -76,31 +76,25 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 			customLabels       map[string]string
 		}{
 			{
-				name:               "GET request, user agent is not browser",
+				name:               "GET request",
 				method:             http.MethodGet,
 				url:                "/hello",
-				userAgent:          "agent1",
 				statusCodeToReturn: http.StatusOK,
 				reqsNum:            10,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 			},
 			{
-				name:               "POST request, user agent is not browser",
+				name:               "POST request",
 				method:             http.MethodPost,
 				url:                "/world",
-				userAgent:          "agent2",
 				statusCodeToReturn: http.StatusMethodNotAllowed,
 				reqsNum:            11,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 			},
 			{
-				name:               "DELETE request, user agent is browser",
+				name:               "DELETE request",
 				method:             http.MethodDelete,
 				url:                "/admin",
-				userAgent:          "Mozilla/5.0",
 				statusCodeToReturn: http.StatusForbidden,
 				reqsNum:            12,
-				wantUserAgentType:  userAgentTypeBrowser,
 			},
 			{
 				name:               "PUT request, custom func to parse user agent",
@@ -124,37 +118,30 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 				userAgent:          "k8s",
 				statusCodeToReturn: http.StatusOK,
 				reqsNum:            10,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 				excludedEndpoints:  []string{"/healthz"},
 			},
 			{
 				name:               "GET request, labels currying",
 				method:             http.MethodGet,
 				url:                "/hello-currying",
-				userAgent:          "agent1",
 				statusCodeToReturn: http.StatusOK,
 				reqsNum:            10,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 				curriedLabels:      prometheus.Labels{"extra1": "value1", "extra2": "value2"},
 			},
 			{
 				name:               "GET request, custom labels",
 				method:             http.MethodGet,
 				url:                "/hello-currying",
-				userAgent:          "agent1",
 				statusCodeToReturn: http.StatusOK,
 				reqsNum:            10,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 				customLabels:       map[string]string{"custom1": "value1", "custom2": "value2"},
 			},
 			{
 				name:               "GET request, custom labels, labels currying",
 				method:             http.MethodGet,
 				url:                "/hello-currying",
-				userAgent:          "agent1",
 				statusCodeToReturn: http.StatusOK,
 				reqsNum:            10,
-				wantUserAgentType:  userAgentTypeHTTPClient,
 				curriedLabels:      prometheus.Labels{"extra1": "value1", "extra2": "value2"},
 				customLabels:       map[string]string{"custom1": "value1", "custom2": "value2"},
 			},
@@ -214,7 +201,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		if assert.Panics(t, func() { h.ServeHTTP(resp, req) }) {
 			assert.Equal(t, 1, next.called)
-			labels := makeLabels(http.MethodGet, "/internal-error", "http-client", "500", nil)
+			labels := makeLabels(http.MethodGet, "/internal-error", "", "500", nil)
 			hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 			testutil.AssertSamplesCountInHistogram(t, hist, 1)
 		}
@@ -229,7 +216,7 @@ func TestHttpRequestMetricsHandler_ServeHTTP(t *testing.T) {
 		h := HTTPRequestMetrics(promMetrics, getRoutePattern)(next)
 		h.ServeHTTP(resp, req)
 		assert.Equal(t, http.StatusOK, resp.Code)
-		labels := makeLabels(http.MethodGet, "/hello", "http-client", "200", nil)
+		labels := makeLabels(http.MethodGet, "/hello", "", "200", nil)
 		hist := promMetrics.Durations.With(labels).(prometheus.Histogram)
 		testutil.AssertSamplesCountInHistogram(t, hist, 0)
 	})

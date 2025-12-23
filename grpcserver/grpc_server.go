@@ -33,10 +33,12 @@ type LoggingOptions struct {
 
 // MetricsOptions represents options for gRPC request metrics that used in GRPCServer.
 type MetricsOptions struct {
-	Namespace                   string
-	DurationBuckets             []float64
-	ConstLabels                 prometheus.Labels
-	UnaryUserAgentTypeProvider  func(ctx context.Context, info *grpc.UnaryServerInfo) string
+	Namespace       string
+	DurationBuckets []float64
+	ConstLabels     prometheus.Labels
+	// Deprecated: UnaryUserAgentTypeProvider be removed in the next major version. Please use CustomLabels instead.
+	UnaryUserAgentTypeProvider func(ctx context.Context, info *grpc.UnaryServerInfo) string
+	// Deprecated: StreamUserAgentTypeProvider be removed in the next major version. Please use CustomLabels instead.
 	StreamUserAgentTypeProvider func(ctx context.Context, info *grpc.StreamServerInfo) string
 }
 
