@@ -7,20 +7,20 @@ require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
-	github.com/go-chi/chi/v5 v5.2.3
-	github.com/go-viper/mapstructure/v2 v2.4.0
+	github.com/go-chi/chi/v5 v5.2.5
+	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/xid v1.6.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/viper v1.21.0
-	github.com/ssgreg/logf v1.4.2
+	github.com/ssgreg/logf v1.5.0
 	github.com/ssgreg/logftext v1.1.1
 	github.com/stretchr/testify v1.11.1
 	github.com/throttled/throttled/v2 v2.15.0
 	github.com/vasayxtx/go-glob v1.2.0
 	go.uber.org/atomic v1.11.0
 	golang.org/x/time v0.14.0
-	google.golang.org/grpc v1.77.0
+	google.golang.org/grpc v1.79.3
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
