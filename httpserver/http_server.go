@@ -42,9 +42,10 @@ type APIRoute = func(router chi.Router)
 // HTTPRequestMetricsOpts represents options for HTTPRequestMetricsOpts middleware that used in HTTPServer.
 type HTTPRequestMetricsOpts struct {
 	// Metrics opts.
-	Namespace       string
-	DurationBuckets []float64
-	ConstLabels     prometheus.Labels
+	Namespace        string
+	DurationBuckets  []float64
+	ConstLabels      prometheus.Labels
+	CustomLabelNames []string
 
 	// Middleware opts.
 	// Deprecated: GetUserAgentType be removed in the next major version. Please use CustomLabels with Context instead.
@@ -121,9 +122,10 @@ func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { 
 
 	httpReqPromMetrics := middleware.NewHTTPRequestPrometheusMetricsWithOpts(
 		middleware.HTTPRequestPrometheusMetricsOpts{
-			Namespace:       opts.HTTPRequestMetrics.Namespace,
-			DurationBuckets: opts.HTTPRequestMetrics.DurationBuckets,
-			ConstLabels:     opts.HTTPRequestMetrics.ConstLabels,
+			Namespace:        opts.HTTPRequestMetrics.Namespace,
+			DurationBuckets:  opts.HTTPRequestMetrics.DurationBuckets,
+			ConstLabels:      opts.HTTPRequestMetrics.ConstLabels,
+			CustomLabelNames: opts.HTTPRequestMetrics.CustomLabelNames,
 		})
 	router := chi.NewRouter()
 	if err := applyDefaultMiddlewaresToRouter(router, cfg, logger, opts, httpReqPromMetrics); err != nil {
