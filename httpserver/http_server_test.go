@@ -774,3 +774,54 @@ func TestHTTPServer_NewWithAPIRoutesHasMetrics(t *testing.T) {
 	defer func() { require.NoError(t, resp.Body.Close()) }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
+
+func TestHTTPServer_HTTPRequestMetricsCustomLabelNames(t *testing.T) {
+	const customLabelName = "cross_dc_request"
+
+	addr := testutil.GetLocalAddrWithFreeTCPPort()
+
+	apiRoutes := map[APIVersion]APIRoute{
+		1: func(router chi.Router) {
+			router.Get("/test", func(rw http.ResponseWriter, r *http.Request) {
+				mp := middleware.GetMetricsParamsFromContext(r.Context())
+				mp.SetValue(customLabelName, "true")
+				logger := middleware.GetLoggerFromContext(r.Context())
+				restapi.RespondJSON(rw, map[string]string{"message": "test"}, logger)
+			})
+		},
+	}
+
+	httpServer, err := New(&Config{Address: addr}, logtest.NewLogger(), Opts{
+		ServiceNameInURL: "test-service",
+		APIRoutes:        apiRoutes,
+		HTTPRequestMetrics: HTTPRequestMetricsOpts{
+			CustomLabelNames: []string{customLabelName},
+		},
+	})
+	require.NoError(t, err)
+	httpServer.MustRegisterMetrics()
+	defer httpServer.UnregisterMetrics()
+
+	fatalErr := make(chan error, 1)
+	go httpServer.Start(fatalErr)
+	require.NoError(t, testutil.WaitListeningServer(addr, time.Second*3))
+	defer func() {
+		require.NoError(t, httpServer.Stop(false))
+		testutil.RequireNoErrorInChannel(t, fatalErr)
+	}()
+
+	resp, err := http.Get(httpServer.URL + "/api/test-service/v1/test")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, resp.Body.Close())
+
+	resp, err = http.Get(httpServer.URL + "/metrics")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	require.Contains(t, string(respBody), `cross_dc_request="true"`,
+		"custom label registered via HTTPRequestMetricsOpts.CustomLabelNames must be present in the metrics output")
+}
