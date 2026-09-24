@@ -3,7 +3,6 @@ module github.com/acronis/go-appkit
 go 1.26.0
 
 require (
-	code.cloudfoundry.org/bytefmt v0.91.0
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396

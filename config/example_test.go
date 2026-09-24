@@ -13,7 +13,7 @@ import (
 	"os"
 	"path"
 
-	"code.cloudfoundry.org/bytefmt"
+	"github.com/acronis/go-appkit/internal/bytefmt"
 )
 
 const (

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"code.cloudfoundry.org/bytefmt"
+	"github.com/acronis/go-appkit/internal/bytefmt"
 	"gopkg.in/yaml.v3"
 )
 

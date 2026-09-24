@@ -16,7 +16,7 @@ import (
 	"net/http"
 	"strings"
 
-	"code.cloudfoundry.org/bytefmt"
+	"github.com/acronis/go-appkit/internal/bytefmt"
 )
 
 // RequestBodyTooLargeError represents an error that occurs

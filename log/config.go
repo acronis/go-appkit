@@ -10,9 +10,8 @@ import (
 	"fmt"
 	"strings"
 
-	"code.cloudfoundry.org/bytefmt"
-
 	"github.com/acronis/go-appkit/config"
+	"github.com/acronis/go-appkit/internal/bytefmt"
 )
 
 const cfgDefaultKeyPrefix = "log"
