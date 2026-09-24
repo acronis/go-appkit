@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/acronis/go-appkit/internal/bytefmt"
 	"gopkg.in/yaml.v3"
+
+	"github.com/acronis/go-appkit/internal/bytefmt"
 )
 
 // ByteSize represents a size in bytes that can be parsed from JSON and YAML.

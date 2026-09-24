@@ -28,7 +28,7 @@ func CallSetProviderDefaultsForFields(obj interface{}, dp DataProvider) {
 			continue
 		}
 		v := el.Field(i).Interface()
-		if reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil() {
+		if reflect.ValueOf(v).Kind() == reflect.Pointer && reflect.ValueOf(v).IsNil() {
 			continue
 		}
 		if c, ok := v.(Config); ok {
@@ -50,7 +50,7 @@ func CallSetForFields(obj interface{}, dp DataProvider) error {
 			continue
 		}
 		v := el.Field(i).Interface()
-		if reflect.ValueOf(v).Kind() == reflect.Ptr && reflect.ValueOf(v).IsNil() {
+		if reflect.ValueOf(v).Kind() == reflect.Pointer && reflect.ValueOf(v).IsNil() {
 			continue
 		}
 		if c, ok := v.(Config); ok {

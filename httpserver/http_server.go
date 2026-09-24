@@ -48,6 +48,7 @@ type HTTPRequestMetricsOpts struct {
 	CustomLabelNames []string
 
 	// Middleware opts.
+	//
 	// Deprecated: GetUserAgentType be removed in the next major version. Please use CustomLabels with Context instead.
 	GetUserAgentType middleware.UserAgentTypeGetterFunc
 	GetRoutePattern  middleware.RoutePatternGetterFunc
@@ -141,6 +142,7 @@ func New(cfg *Config, logger log.FieldLogger, opts Opts) (*HTTPServer, error) { 
 // NewWithHandler creates a new HTTPServer receiving already created http.Handler.
 // Unlike the New constructor, it doesn't add any middlewares.
 // Typical use case: create a chi.Router using NewRouter and pass it into NewWithHandler.
+//
 // Deprecated: Will be removed in the next major version. Please use New with Handler options instead.
 func NewWithHandler(cfg *Config, logger log.FieldLogger, handler http.Handler) *HTTPServer {
 	return newWithHandler(cfg, logger, handler, nil)

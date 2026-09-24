@@ -22,7 +22,8 @@ const (
 	exabyte
 )
 
-var invalidByteQuantityError = errors.New("byte quantity must be a positive integer with a unit of measurement like M, MB, MiB, G, GiB, or GB")
+var errInvalidByteQuantity = errors.New(
+	"byte quantity must be a positive integer with a unit of measurement like M, MB, MiB, G, GiB, or GB")
 
 // ByteSize formats a byte count using the largest binary unit it contains.
 func ByteSize(bytes uint64) string {
@@ -64,12 +65,12 @@ func ToBytes(s string) (uint64, error) {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	i := strings.IndexFunc(s, unicode.IsLetter)
 	if i == -1 {
-		return 0, invalidByteQuantityError
+		return 0, errInvalidByteQuantity
 	}
 
 	bytes, err := strconv.ParseFloat(s[:i], 64)
 	if err != nil || bytes < 0 {
-		return 0, invalidByteQuantityError
+		return 0, errInvalidByteQuantity
 	}
 
 	switch s[i:] {
@@ -88,6 +89,6 @@ func ToBytes(s string) (uint64, error) {
 	case "B":
 		return uint64(bytes), nil
 	default:
-		return 0, invalidByteQuantityError
+		return 0, errInvalidByteQuantity
 	}
 }

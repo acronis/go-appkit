@@ -91,6 +91,7 @@ func NewConfig(options ...ConfigOption) *Config {
 
 // NewConfigWithKeyPrefix creates a new instance of the Config with a key prefix.
 // This prefix will be used by config.Loader.
+//
 // Deprecated: use NewConfig with WithKeyPrefix instead.
 func NewConfigWithKeyPrefix(keyPrefix string) *Config {
 	if keyPrefix != "" {

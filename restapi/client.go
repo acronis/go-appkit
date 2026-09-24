@@ -32,6 +32,7 @@ func DoRequest(client *http.Client, req *http.Request, logger log.FieldLogger) (
 		)
 	})
 
+	// #nosec G704 -- The caller supplies the request and decides which destinations are allowed.
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to do http request %s %s", req.Method, req.URL.String()),

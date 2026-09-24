@@ -52,9 +52,9 @@ func (r *maxBytesReader) Read(p []byte) (n int, err error) {
 // SetRequestMaxBodySize wraps request body with a reader which limit the number of bytes to read.
 // RequestBodyTooLargeError will be returned when maxSizeBytes is exceeded.
 func SetRequestMaxBodySize(w http.ResponseWriter, r *http.Request, maxSizeBytes uint64) {
-	maxBytes := int64(maxSizeBytes)
-	if maxSizeBytes > math.MaxInt64 {
-		maxBytes = math.MaxInt64
+	maxBytes := int64(math.MaxInt64)
+	if maxSizeBytes <= math.MaxInt64 {
+		maxBytes = int64(maxSizeBytes)
 	}
 	r.Body = &maxBytesReader{ReadCloser: http.MaxBytesReader(w, r.Body, maxBytes), n: maxSizeBytes}
 }

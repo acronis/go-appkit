@@ -48,6 +48,7 @@ type RetryableRoundTripper struct {
 	Delegate http.RoundTripper
 
 	// Logger is used for logging.
+	//
 	// Deprecated: use LoggerProvider instead.
 	Logger log.FieldLogger
 
@@ -80,6 +81,7 @@ type RetryableRoundTripper struct {
 // RetryableRoundTripperOpts represents an options for RetryableRoundTripper.
 type RetryableRoundTripperOpts struct {
 	// Logger is used for logging.
+	//
 	// Deprecated: use LoggerProvider instead.
 	Logger log.FieldLogger
 
