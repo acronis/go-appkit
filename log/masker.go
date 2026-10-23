@@ -137,7 +137,7 @@ func (r *Masker) mask(s string) string {
 	return s
 }
 
-// maskFor64Fields is a optimized version of mask for 64 fields max.
+// maskFor64Fields is an optimized version of mask for 64 fields max.
 func (r *Masker) maskFor64Fields(s string) string {
 	lower := stringToBytes(strings.ToLower(s))
 	matches := r.aho.MatchThreadSafe(lower)

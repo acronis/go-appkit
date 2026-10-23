@@ -29,7 +29,7 @@ func NewViperAdapter() *ViperAdapter {
 }
 
 // UseEnvVars enables the ability to use environment variables for configuration parameters.
-// Prefix defines what environment variables will be looked.
+// Prefix defines what environment variables will be looked up.
 // E.g., if your prefix is "spf", the env registry will look for env
 // variables that start with "SPF_".
 func (va *ViperAdapter) UseEnvVars(prefix string) {
@@ -91,14 +91,14 @@ func (va *ViperAdapter) GetIntSlice(key string) (res []int, err error) {
 	return
 }
 
-// GetFloat32 tries to retrieve the value associated with the key as an float32.
+// GetFloat32 tries to retrieve the value associated with the key as a float32.
 func (va *ViperAdapter) GetFloat32(key string) (res float32, err error) {
 	res, err = cast.ToFloat32E(va.Get(key))
 	err = WrapKeyErrIfNeeded(key, err)
 	return
 }
 
-// GetFloat64 tries to retrieve the value associated with the key as an float64.
+// GetFloat64 tries to retrieve the value associated with the key as a float64.
 func (va *ViperAdapter) GetFloat64(key string) (res float64, err error) {
 	res, err = cast.ToFloat64E(va.Get(key))
 	err = WrapKeyErrIfNeeded(key, err)
@@ -119,7 +119,7 @@ func (va *ViperAdapter) GetBool(key string) (res bool, err error) {
 	return
 }
 
-// GetStringSlice tries to retrieve the value associated with the key as an slice of strings.
+// GetStringSlice tries to retrieve the value associated with the key as a slice of strings.
 func (va *ViperAdapter) GetStringSlice(key string) (res []string, err error) {
 	val := va.Get(key)
 	if val == nil {
@@ -183,7 +183,7 @@ func (va *ViperAdapter) GetDuration(key string) (res time.Duration, err error) {
 	return
 }
 
-// GetStringMapString tries to retrieve the value associated with the key as an map where key and value are strings.
+// GetStringMapString tries to retrieve the value associated with the key as a map where key and value are strings.
 func (va *ViperAdapter) GetStringMapString(key string) (res map[string]string, err error) {
 	val := va.Get(key)
 	if val == nil {
