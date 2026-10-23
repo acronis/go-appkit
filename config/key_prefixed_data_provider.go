@@ -30,7 +30,7 @@ func (kp *KeyPrefixedDataProvider) makeKey(key string) string {
 }
 
 // UseEnvVars enables the ability to use environment variables for configuration parameters.
-// Prefix defines what environment variables will be looked.
+// Prefix defines what environment variables will be looked up.
 // E.g., if your prefix is "spf", the env registry will look for env
 // variables that start with "SPF_".
 func (kp *KeyPrefixedDataProvider) UseEnvVars(prefix string) {
@@ -79,12 +79,12 @@ func (kp *KeyPrefixedDataProvider) GetIntSlice(key string) (res []int, err error
 	return kp.delegate.GetIntSlice(kp.makeKey(key))
 }
 
-// GetFloat32 tries to retrieve the value associated with the key as an float32.
+// GetFloat32 tries to retrieve the value associated with the key as a float32.
 func (kp *KeyPrefixedDataProvider) GetFloat32(key string) (res float32, err error) {
 	return kp.delegate.GetFloat32(kp.makeKey(key))
 }
 
-// GetFloat64 tries to retrieve the value associated with the key as an float64.
+// GetFloat64 tries to retrieve the value associated with the key as a float64.
 func (kp *KeyPrefixedDataProvider) GetFloat64(key string) (res float64, err error) {
 	return kp.delegate.GetFloat64(kp.makeKey(key))
 }
@@ -99,7 +99,7 @@ func (kp *KeyPrefixedDataProvider) GetBool(key string) (res bool, err error) {
 	return kp.delegate.GetBool(kp.makeKey(key))
 }
 
-// GetStringSlice tries to retrieve the value associated with the key as an slice of strings.
+// GetStringSlice tries to retrieve the value associated with the key as a slice of strings.
 func (kp *KeyPrefixedDataProvider) GetStringSlice(key string) (res []string, err error) {
 	return kp.delegate.GetStringSlice(kp.makeKey(key))
 }
@@ -119,7 +119,7 @@ func (kp *KeyPrefixedDataProvider) GetDuration(key string) (res time.Duration, e
 	return kp.delegate.GetDuration(kp.makeKey(key))
 }
 
-// GetStringMapString tries to retrieve the value associated with the key as an map where key and value are strings.
+// GetStringMapString tries to retrieve the value associated with the key as a map where key and value are strings.
 func (kp *KeyPrefixedDataProvider) GetStringMapString(key string) (res map[string]string, err error) {
 	return kp.delegate.GetStringMapString(kp.makeKey(key))
 }
