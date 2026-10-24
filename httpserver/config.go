@@ -267,7 +267,7 @@ func (l *LogConfig) Set(dp config.DataProvider) error {
 	return nil
 }
 
-// TLSConfig contains configuration parameters needed to initialize(or not) secure server
+// TLSConfig contains configuration parameters needed to initialize (or not) secure server
 type TLSConfig struct {
 	Enabled     bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
 	Certificate string `mapstructure:"cert" yaml:"cert" json:"cert"`
