@@ -1,5 +1,5 @@
 /*
-Copyright © 2025 Acronis International GmbH.
+Copyright © 2025-2026 Acronis International GmbH.
 
 Released under MIT license.
 */
@@ -11,55 +11,55 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/RussellLuo/slidingwindow"
-
 	"github.com/acronis/go-appkit/lrucache"
 )
 
 // SlidingWindowLimiter implements sliding window rate limiting algorithm.
 type SlidingWindowLimiter struct {
-	getLimiter func(key string) *slidingwindow.Limiter
+	getCounter func(key string) *slidingWindowCounter
 	maxRate    Rate
+	now        func() time.Time
 }
 
 // NewSlidingWindowLimiter creates a new sliding window rate limiter.
 func NewSlidingWindowLimiter(maxRate Rate, maxKeys int) (*SlidingWindowLimiter, error) {
+	if maxRate.Duration <= 0 {
+		return nil, fmt.Errorf("rate duration must be positive, got %s", maxRate.Duration)
+	}
+
 	if maxKeys == 0 {
-		lim, _ := slidingwindow.NewLimiter(
-			maxRate.Duration, int64(maxRate.Count), func() (slidingwindow.Window, slidingwindow.StopFunc) {
-				return slidingwindow.NewLocalWindow()
-			})
+		counter := newSlidingWindowCounter(maxRate.Duration, int64(maxRate.Count))
 		return &SlidingWindowLimiter{
 			maxRate:    maxRate,
-			getLimiter: func(_ string) *slidingwindow.Limiter { return lim },
+			getCounter: func(_ string) *slidingWindowCounter { return counter },
+			now:        time.Now,
 		}, nil
 	}
 
-	store, err := lrucache.New[string, *slidingwindow.Limiter](maxKeys, nil)
+	store, err := lrucache.New[string, *slidingWindowCounter](maxKeys, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
 	}
 	return &SlidingWindowLimiter{
 		maxRate: maxRate,
-		getLimiter: func(key string) *slidingwindow.Limiter {
-			lim, _ := store.GetOrAdd(key, func() *slidingwindow.Limiter {
-				lim, _ := slidingwindow.NewLimiter(
-					maxRate.Duration, int64(maxRate.Count), func() (slidingwindow.Window, slidingwindow.StopFunc) {
-						return slidingwindow.NewLocalWindow()
-					})
-				return lim
+		getCounter: func(key string) *slidingWindowCounter {
+			counter, _ := store.GetOrAdd(key, func() *slidingWindowCounter {
+				return newSlidingWindowCounter(maxRate.Duration, int64(maxRate.Count))
 			})
-			return lim
+			return counter
 		},
+		now: time.Now,
 	}, nil
 }
 
 // Allow checks if the request should be allowed based on the rate limit.
+// If the request is not allowed, retryAfter is the time until the start of the next fixed window, it's always positive.
 func (l *SlidingWindowLimiter) Allow(_ context.Context, key string) (allow bool, retryAfter time.Duration, err error) {
-	if l.getLimiter(key).Allow() {
+	counter := l.getCounter(key)
+	now := l.now() // After the LRU lookup that may block; the same value is used for retryAfter.
+	if counter.allow(now) {
 		return true, 0, nil
 	}
-	now := time.Now()
 	retryAfter = now.Truncate(l.maxRate.Duration).Add(l.maxRate.Duration).Sub(now)
 	return false, retryAfter, nil
 }
