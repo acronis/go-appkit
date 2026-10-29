@@ -17,7 +17,6 @@ import (
 // SlidingWindowLimiter implements sliding window rate limiting algorithm.
 type SlidingWindowLimiter struct {
 	getCounter func(key string) *slidingWindowCounter
-	maxRate    Rate
 	now        func() time.Time
 }
 
@@ -30,7 +29,6 @@ func NewSlidingWindowLimiter(maxRate Rate, maxKeys int) (*SlidingWindowLimiter, 
 	if maxKeys == 0 {
 		counter := newSlidingWindowCounter(maxRate.Duration, int64(maxRate.Count))
 		return &SlidingWindowLimiter{
-			maxRate:    maxRate,
 			getCounter: func(_ string) *slidingWindowCounter { return counter },
 			now:        time.Now,
 		}, nil
@@ -41,7 +39,6 @@ func NewSlidingWindowLimiter(maxRate Rate, maxKeys int) (*SlidingWindowLimiter, 
 		return nil, fmt.Errorf("new LRU in-memory store for keys: %w", err)
 	}
 	return &SlidingWindowLimiter{
-		maxRate: maxRate,
 		getCounter: func(key string) *slidingWindowCounter {
 			counter, _ := store.GetOrAdd(key, func() *slidingWindowCounter {
 				return newSlidingWindowCounter(maxRate.Duration, int64(maxRate.Count))
@@ -53,13 +50,10 @@ func NewSlidingWindowLimiter(maxRate Rate, maxKeys int) (*SlidingWindowLimiter, 
 }
 
 // Allow checks if the request should be allowed based on the rate limit.
-// If the request is not allowed, retryAfter is the time until the start of the next fixed window, it's always positive.
+// On rejection, retryAfter is the earliest retry delay without intervening admissions or clock jumps.
+// It is positive and capped at the maximum time.Duration, also used for non-positive limits.
 func (l *SlidingWindowLimiter) Allow(_ context.Context, key string) (allow bool, retryAfter time.Duration, err error) {
 	counter := l.getCounter(key)
-	now := l.now() // After the LRU lookup that may block; the same value is used for retryAfter.
-	if counter.allow(now) {
-		return true, 0, nil
-	}
-	retryAfter = now.Truncate(l.maxRate.Duration).Add(l.maxRate.Duration).Sub(now)
-	return false, retryAfter, nil
+	allow, retryAfter = counter.allow(l.now()) // Sample time after the potentially blocking LRU lookup.
+	return allow, retryAfter, nil
 }

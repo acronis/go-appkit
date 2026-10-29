@@ -9,9 +9,7 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/acronis/go-appkit/internal/ratelimit"
@@ -245,7 +243,7 @@ func DefaultRateLimitOnReject(
 		)
 	}
 	if params.GetRetryAfter != nil {
-		rw.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(params.GetRetryAfter(r, params.EstimatedRetryAfter).Seconds()))))
+		rw.Header().Set("Retry-After", ratelimit.FormatRetryAfter(params.GetRetryAfter(r, params.EstimatedRetryAfter)))
 	}
 	apiErr := restapi.NewError(params.ErrDomain, RateLimitErrCode, "Too many requests.")
 	restapi.RespondError(rw, params.ResponseStatusCode, apiErr, logger)

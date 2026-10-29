@@ -31,17 +31,14 @@ package ratelimit
 
 import (
 	"math"
+	"math/bits"
 	"sync"
 	"time"
 )
 
-// maxInt64Float is 2^63; converting a float64 >= 2^63 to int64 is implementation-defined in Go.
-const maxInt64Float = float64(math.MaxInt64)
-
 // slidingWindowCounter estimates the count in a sliding window by two adjacent fixed windows:
 // floor(prevCount*(size-elapsed)/size) + currCount. Windows are aligned by time.Time.Truncate (wall clock).
-// The weight is computed in float64 exactly as in the upstream implementation; exact integer arithmetic
-// would round differently in some cases (e.g. 0.58*50 gives 28 in float64, not 29).
+// This is an approximation, not a strict limit over every rolling interval of length size.
 type slidingWindowCounter struct {
 	size  time.Duration
 	limit int64
@@ -57,25 +54,51 @@ func newSlidingWindowCounter(size time.Duration, limit int64) *slidingWindowCoun
 	return &slidingWindowCounter{size: size, limit: limit}
 }
 
-// allow reports whether one more event may happen at now and counts it if so.
-func (c *slidingWindowCounter) allow(now time.Time) bool {
+// allow counts an event if permitted, otherwise returns the earliest retry delay assuming
+// no intervening admissions or clock jumps. Delays exceeding time.Duration, and limits
+// that never permit an event, return math.MaxInt64.
+func (c *slidingWindowCounter) allow(now time.Time) (bool, time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.advance(now)
-
-	elapsed := now.Sub(time.Unix(0, c.currStart))
-	weight := float64(c.size-elapsed) / float64(c.size)
-	weightedPrev := weight * float64(c.prevCount)
-
-	// Same as upstream "int64(weightedPrev)+currCount+1 > limit", but without overflows.
-	// currCount <= max(limit, 0), so "limit-currCount" cannot overflow.
-	if weightedPrev >= maxInt64Float || int64(weightedPrev) >= c.limit-c.currCount {
-		return false
+	if c.limit <= 0 {
+		return false, time.Duration(math.MaxInt64)
+	}
+	if c.currCount == c.limit {
+		// At the next boundary the full current window becomes the previous window.
+		// Its weight first drops below 1 one nanosecond after that boundary.
+		return false, time.Unix(0, c.currStart).Add(c.size).Add(time.Nanosecond).Sub(now)
 	}
 
-	c.currCount++
-	return true
+	elapsed := now.Sub(time.Unix(0, c.currStart))
+	// #nosec G115 -- size > 0, prevCount >= 0 and admissions keep 0 <= currCount < limit here.
+	size, prev, headroom := uint64(c.size), uint64(c.prevCount), uint64(c.limit-c.currCount)
+	// Unsigned subtraction also handles negative elapsed after a clock rollback:
+	// size-elapsed can exceed MaxInt64, but always fits in uint64.
+	// #nosec G115 -- converting negative elapsed uses intentional modulo-2^64 arithmetic.
+	remaining := size - uint64(elapsed)
+	// floor(prev*remaining/size) < headroom iff prev*remaining < headroom*size.
+	// Compare 128-bit products to avoid both floating-point rounding and overflow.
+	prevHi, prevLo := bits.Mul64(prev, remaining)
+	limitHi, limitLo := bits.Mul64(headroom, size)
+	if prevHi < limitHi || (prevHi == limitHi && prevLo < limitLo) {
+		c.currCount++
+		return true, 0
+	}
+
+	// Find the largest remaining duration for which prev*remaining < headroom*size:
+	// ceil(headroom*size/prev)-1. Rejection implies prev > 0 and quotient <= remaining,
+	// so Div64 cannot overflow. This also handles admission exactly at the next boundary.
+	maxRemaining, remainder := bits.Div64(limitHi, limitLo, prev)
+	if remainder == 0 {
+		maxRemaining--
+	}
+	delay := remaining - maxRemaining
+	if delay > math.MaxInt64 {
+		return false, time.Duration(math.MaxInt64)
+	}
+	return false, time.Duration(delay)
 }
 
 func (c *slidingWindowCounter) advance(now time.Time) {

@@ -600,7 +600,7 @@ func createGRPCServer(logger log.FieldLogger) *grpc.Server {
    - Custom interceptors (last)
 
 2. **Rate Limiting**:
-   - Use appropriate algorithms: leaky bucket for burst tolerance, sliding window for precise limits
+   - Use appropriate algorithms: leaky bucket for burst tolerance, sliding-window counter for approximate limits with constant memory per key
    - Implement per-client rate limiting using IP, user ID, or client ID as keys
    - Use dry run mode to test rate limits in production without enforcement
    - Configure appropriate backlog limits and timeouts based on your service capacity

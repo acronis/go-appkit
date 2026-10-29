@@ -8,6 +8,7 @@ package ratelimit
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -48,7 +49,7 @@ func (ts *SlidingWindowLimiterTestSuite) TestAllowSequential() {
 	allow, retryAfter, err = limiter.Allow(ctx, key)
 	ts.NoError(err)
 	ts.False(allow)
-	ts.Equal(600*time.Millisecond, retryAfter)
+	ts.Equal(600*time.Millisecond+time.Nanosecond, retryAfter)
 }
 
 func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterCalculation() {
@@ -67,7 +68,7 @@ func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterCalculation() {
 	allow, retryAfter, err := limiter.Allow(ctx, key)
 	ts.NoError(err)
 	ts.False(allow)
-	ts.Equal(700*time.Millisecond, retryAfter)
+	ts.Equal(700*time.Millisecond+time.Nanosecond, retryAfter)
 }
 
 func newTestSlidingWindowLimiter(ts *SlidingWindowLimiterTestSuite, maxRate Rate, maxKeys int, now *time.Time) *SlidingWindowLimiter {
@@ -135,11 +136,11 @@ func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterAtWindowBoundary() {
 		now            time.Time
 		wantRetryAfter time.Duration
 	}{
-		{windowStart, size},
-		{windowStart.Add(300 * time.Millisecond), 700 * time.Millisecond},
-		{windowStart.Add(size - 1), 1},
-		// The request is still rejected at the boundary (previous window weight is 1), and retryAfter is a full window.
-		{windowStart.Add(size), size},
+		{windowStart, size + time.Nanosecond},
+		{windowStart.Add(300 * time.Millisecond), 700*time.Millisecond + time.Nanosecond},
+		{windowStart.Add(size - 1), 2},
+		// At the boundary the previous weight is 1; one nanosecond later it falls below 1.
+		{windowStart.Add(size), time.Nanosecond},
 	}
 	for _, tt := range tests {
 		now = tt.now
@@ -151,11 +152,11 @@ func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterAtWindowBoundary() {
 }
 
 // The decision and retryAfter must use the same time snapshot.
-// Otherwise, a request rejected right before the boundary could get retryAfter of a full window.
+// A second clock read crossing a window boundary must not change the calculated delay.
 func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterUsesSingleTimeSnapshot() {
 	limiter, err := NewSlidingWindowLimiter(Rate{Count: 1, Duration: time.Second}, 0)
 	ts.Require().NoError(err)
-	ts.Require().True(limiter.getCounter("").allow(windowStart.Add(time.Second - 1)))
+	ts.Require().True(allowAt(limiter.getCounter(""), windowStart.Add(time.Second-1)))
 
 	calls := 0
 	limiter.now = func() time.Time {
@@ -168,7 +169,7 @@ func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterUsesSingleTimeSnapshot() 
 	allow, retryAfter, err := limiter.Allow(context.Background(), "")
 	ts.Require().NoError(err)
 	ts.Require().False(allow)
-	ts.Require().Equal(time.Duration(1), retryAfter)
+	ts.Require().Equal(2*time.Nanosecond, retryAfter)
 	ts.Require().Equal(1, calls)
 }
 
@@ -187,7 +188,7 @@ func (ts *SlidingWindowLimiterTestSuite) TestContextIsIgnored() {
 	allow, retryAfter, err = limiter.Allow(ctx, "")
 	ts.Require().NoError(err)
 	ts.Require().False(allow)
-	ts.Require().Equal(time.Second, retryAfter)
+	ts.Require().Equal(time.Second+time.Nanosecond, retryAfter)
 }
 
 func (ts *SlidingWindowLimiterTestSuite) TestConcurrentPerKey() {
@@ -215,4 +216,44 @@ func (ts *SlidingWindowLimiterTestSuite) TestConcurrentPerKey() {
 	for k := range allowed {
 		ts.Equal(int64(limit), allowed[k].Load(), "key #%d", k)
 	}
+}
+
+// A retry must succeed at the advertised time, and fail one nanosecond earlier,
+// assuming no intervening admissions or clock jumps.
+func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterEarliestAdmission() {
+	for _, rate := range []Rate{{Count: 1, Duration: time.Minute}, {Count: 100, Duration: time.Minute}} {
+		ts.Run(fmt.Sprintf("%d_per_minute", rate.Count), func() {
+			now := windowStart
+			limiter := newTestSlidingWindowLimiter(ts, rate, 0, &now)
+			for i := 0; i < rate.Count; i++ {
+				ts.assertAllow(limiter, "", true)
+			}
+			allow, wait, err := limiter.Allow(context.Background(), "")
+			ts.Require().NoError(err)
+			ts.Require().False(allow)
+			ts.Require().Equal(time.Minute+time.Nanosecond, wait)
+			now = now.Add(wait - time.Nanosecond)
+			ts.assertAllow(limiter, "", false)
+			now = now.Add(time.Nanosecond)
+			ts.assertAllow(limiter, "", true)
+		})
+	}
+}
+
+func (ts *SlidingWindowLimiterTestSuite) TestRetryAfterWithinWindow() {
+	now := windowStart
+	limiter := newTestSlidingWindowLimiter(ts, Rate{Count: 100, Duration: time.Minute}, 0, &now)
+	for i := 0; i < 100; i++ {
+		ts.assertAllow(limiter, "", true)
+	}
+	now = windowStart.Add(time.Minute + 100*time.Millisecond)
+	ts.assertAllow(limiter, "", true)
+	allow, wait, err := limiter.Allow(context.Background(), "")
+	ts.Require().NoError(err)
+	ts.Require().False(allow)
+	ts.Require().Equal(500*time.Millisecond+time.Nanosecond, wait)
+	now = now.Add(wait - time.Nanosecond)
+	ts.assertAllow(limiter, "", false)
+	now = now.Add(time.Nanosecond)
+	ts.assertAllow(limiter, "", true)
 }

@@ -19,10 +19,15 @@ import (
 // windowStart is aligned to a whole second, so it's the start of a fixed window for sizes that divide a second.
 var windowStart = time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 
+func allowAt(c *slidingWindowCounter, now time.Time) bool {
+	allowed, _ := c.allow(now)
+	return allowed
+}
+
 func allowN(c *slidingWindowCounter, now time.Time, n int) int {
 	allowed := 0
 	for i := 0; i < n; i++ {
-		if c.allow(now) {
+		if allowAt(c, now) {
 			allowed++
 		}
 	}
@@ -32,7 +37,7 @@ func allowN(c *slidingWindowCounter, now time.Time, n int) int {
 func TestSlidingWindowCounter_LimitWithinOneWindow(t *testing.T) {
 	c := newSlidingWindowCounter(time.Second, 3)
 	require.Equal(t, 3, allowN(c, windowStart, 10))
-	require.False(t, c.allow(windowStart.Add(999*time.Millisecond)))
+	require.False(t, allowAt(c, windowStart.Add(999*time.Millisecond)))
 }
 
 func TestSlidingWindowCounter_NonPositiveLimit(t *testing.T) {
@@ -50,7 +55,7 @@ func TestSlidingWindowCounter_WindowBoundary(t *testing.T) {
 	require.Equal(t, 2, allowN(c, windowStart.Add(time.Second-1), 2))
 
 	// At the very start of the next window the previous one has weight 1, so floor(1*2)+0 = 2 >= limit.
-	require.False(t, c.allow(windowStart.Add(time.Second)))
+	require.False(t, allowAt(c, windowStart.Add(time.Second)))
 
 	// Weight becomes 0.5 in the middle: floor(0.5*2)+0 = 1, so one more event is allowed.
 	require.Equal(t, 1, allowN(c, windowStart.Add(1500*time.Millisecond), 2))
@@ -63,13 +68,11 @@ func TestSlidingWindowCounter_WeightedCountIsTruncated(t *testing.T) {
 	require.Equal(t, 2, allowN(c, windowStart.Add(1500*time.Millisecond), 5))
 }
 
-// The weight is calculated in float64, and the result must stay the same as in the previous implementation.
-// (1s-420ms)/1s*50 = 28.999999999999996 in float64 and it's truncated to 28, while exact rational arithmetic gives 29.
-func TestSlidingWindowCounter_FloatWeightSemantics(t *testing.T) {
+// The mathematical weight is exact: 50 * 580ms / 1s = 29, leaving 21 slots.
+func TestSlidingWindowCounter_ExactWeight(t *testing.T) {
 	c := newSlidingWindowCounter(time.Second, 50)
 	require.Equal(t, 50, allowN(c, windowStart, 50))
-	// 28 + currCount < 50 holds for currCount in [0, 21], so exactly 22 events are allowed.
-	require.Equal(t, 22, allowN(c, windowStart.Add(1420*time.Millisecond), 30))
+	require.Equal(t, 21, allowN(c, windowStart.Add(1420*time.Millisecond), 30))
 }
 
 func TestSlidingWindowCounter_Idle(t *testing.T) {
@@ -97,9 +100,9 @@ func TestSlidingWindowCounter_Idle(t *testing.T) {
 		first := windowStart.Add(3 * time.Second)
 		boundary := first.Truncate(7 * time.Second).Add(7 * time.Second)
 		require.Equal(t, 2, allowN(c, first, 2))
-		require.False(t, c.allow(boundary.Add(-1)))
-		require.False(t, c.allow(boundary)) // Weight is 1 at the boundary.
-		require.True(t, c.allow(boundary.Add(4*time.Second)))
+		require.False(t, allowAt(c, boundary.Add(-1)))
+		require.False(t, allowAt(c, boundary)) // Weight is 1 at the boundary.
+		require.True(t, allowAt(c, boundary.Add(4*time.Second)))
 	})
 }
 
@@ -109,7 +112,7 @@ func TestSlidingWindowCounter_ClockGoesBackwards(t *testing.T) {
 	require.Equal(t, 2, allowN(c, windowStart.Add(time.Second), 4))
 
 	// Windows don't move back, the previous window weight becomes > 1 (floor(1.5*2)+2 = 5), it's stricter.
-	require.False(t, c.allow(windowStart.Add(500*time.Millisecond)))
+	require.False(t, allowAt(c, windowStart.Add(500*time.Millisecond)))
 
 	// State is kept when the clock returns: floor(0.5*2)+2 = 3.
 	require.Equal(t, 1, allowN(c, windowStart.Add(1500*time.Millisecond), 4))
@@ -118,30 +121,30 @@ func TestSlidingWindowCounter_ClockGoesBackwards(t *testing.T) {
 func TestSlidingWindowCounter_NumericExtremes(t *testing.T) {
 	t.Run("current count at max int64", func(t *testing.T) {
 		c := newSlidingWindowCounter(time.Second, math.MaxInt64)
-		require.True(t, c.allow(windowStart))
+		require.True(t, allowAt(c, windowStart))
 		c.currCount = math.MaxInt64 - 1
-		require.True(t, c.allow(windowStart))
-		require.False(t, c.allow(windowStart)) // currCount+1 would overflow.
+		require.True(t, allowAt(c, windowStart))
+		require.False(t, allowAt(c, windowStart)) // currCount+1 would overflow.
 		require.Equal(t, int64(math.MaxInt64), c.currCount)
 	})
 
-	t.Run("weighted previous count at 2^63", func(t *testing.T) {
+	t.Run("weighted previous count at max int64", func(t *testing.T) {
 		c := newSlidingWindowCounter(time.Second, math.MaxInt64)
-		require.True(t, c.allow(windowStart))
+		require.True(t, allowAt(c, windowStart))
 		c.currCount = math.MaxInt64
-		// At the start of the next window weight is 1 and float64(MaxInt64) = 2^63 that doesn't fit into int64.
-		require.False(t, c.allow(windowStart.Add(time.Second)))
+		// At the boundary the full previous count still consumes the entire limit.
+		require.False(t, allowAt(c, windowStart.Add(time.Second)))
 		require.Equal(t, int64(math.MaxInt64), c.prevCount)
 		require.Zero(t, c.currCount)
 	})
 
 	t.Run("huge weight after clock goes backwards", func(t *testing.T) {
 		c := newSlidingWindowCounter(time.Nanosecond, math.MaxInt64)
-		require.True(t, c.allow(windowStart))
-		require.True(t, c.allow(windowStart.Add(1))) // prevCount = 1.
+		require.True(t, allowAt(c, windowStart))
+		require.True(t, allowAt(c, windowStart.Add(1))) // prevCount = 1.
 		c.prevCount = 1 << 40
 		// Weight is ~3.6e12, weighted previous count is ~4e24.
-		require.False(t, c.allow(windowStart.Add(-time.Hour)))
+		require.False(t, allowAt(c, windowStart.Add(-time.Hour)))
 	})
 }
 

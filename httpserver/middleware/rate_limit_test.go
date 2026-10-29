@@ -482,3 +482,25 @@ func makeRateLimitGetKeyByHeader(headerName string) RateLimitGetKeyFunc {
 		return key, key == "", nil
 	}
 }
+
+func TestDefaultRateLimitOnReject_LargeRetryAfter(t *testing.T) {
+	for _, tt := range []struct {
+		delay time.Duration
+		want  string
+	}{
+		{time.Duration(math.MaxInt64), "9223372036"},
+		{9223372036*time.Second + time.Nanosecond, "9223372036"},
+		{2147483648*time.Second + time.Nanosecond, "2147483649"},
+	} {
+		t.Run(tt.delay.String(), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			DefaultRateLimitOnReject(rec, req, RateLimitParams{
+				ResponseStatusCode:  http.StatusTooManyRequests,
+				EstimatedRetryAfter: tt.delay,
+				GetRetryAfter:       func(_ *http.Request, estimated time.Duration) time.Duration { return estimated },
+			}, nil, nil)
+			require.Equal(t, tt.want, rec.Header().Get("Retry-After"))
+		})
+	}
+}

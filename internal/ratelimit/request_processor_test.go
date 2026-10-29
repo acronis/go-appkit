@@ -10,8 +10,10 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -443,4 +445,30 @@ func (m *mockRequestHandler) OnError(params Params, err error) error {
 	m.lastParams = params
 	m.lastError = err
 	return err
+}
+
+func TestRequestProcessor_SlidingWindowBacklogBeforeTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		limiter, err := NewSlidingWindowLimiter(Rate{Count: 100, Duration: time.Minute}, 0)
+		require.NoError(t, err)
+		start := time.Now()
+		limiter.now = func() time.Time { return windowStart.Add(time.Since(start)) }
+		for i := 0; i < 100; i++ {
+			allowed, _, err := limiter.Allow(context.Background(), "")
+			require.NoError(t, err)
+			require.True(t, allowed)
+		}
+		time.Sleep(time.Minute + 100*time.Millisecond)
+		allowed, _, err := limiter.Allow(context.Background(), "")
+		require.NoError(t, err)
+		require.True(t, allowed)
+		processor, err := NewRequestProcessor(limiter, BacklogParams{Limit: 1, Timeout: 5 * time.Second})
+		require.NoError(t, err)
+		handler := &mockRequestHandler{}
+		started := time.Now()
+		require.NoError(t, processor.ProcessRequest(handler))
+		require.True(t, handler.executeCalled)
+		require.False(t, handler.onRejectCalled)
+		require.Equal(t, 500*time.Millisecond+time.Nanosecond, time.Since(started))
+	})
 }

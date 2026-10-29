@@ -943,3 +943,41 @@ func (s *RateLimitInterceptorTestSuite) TestRateLimitInterceptor_CustomDryRunCal
 		s.True(customStreamDryRunCalled, "Custom stream dry run callback should have been called")
 	}
 }
+
+func (s *RateLimitInterceptorTestSuite) TestRateLimitInterceptor_LargeRetryAfterHeader() {
+	for _, tt := range []struct {
+		delay time.Duration
+		want  string
+	}{
+		{time.Duration(math.MaxInt64), "9223372036"},
+		{9223372036*time.Second + time.Nanosecond, "9223372036"},
+		{2147483648*time.Second + time.Nanosecond, "2147483649"},
+	} {
+		s.Run(tt.delay.String(), func() {
+			options := []RateLimitOption{WithRateLimitAlg(RateLimitAlgSlidingWindow)}
+			// Exercise the actual deny-all estimate for MaxInt64; other values come from custom callbacks.
+			if tt.delay != time.Duration(math.MaxInt64) {
+				options = append(options,
+					WithRateLimitUnaryGetRetryAfter(func(context.Context, interface{}, *grpc.UnaryServerInfo, time.Duration) time.Duration {
+						return tt.delay
+					}),
+					WithRateLimitStreamGetRetryAfter(func(interface{}, grpc.ServerStream, *grpc.StreamServerInfo, time.Duration) time.Duration {
+						return tt.delay
+					}))
+			}
+			_, client, closeSvc, err := s.setupTestService(logtest.NewRecorder(), Rate{Count: 0, Duration: time.Second}, options)
+			s.Require().NoError(err)
+			defer func() { s.Require().NoError(closeSvc()) }()
+			var headers metadata.MD
+			if s.IsUnary {
+				_, err = client.UnaryCall(context.Background(), &grpc_testing.SimpleRequest{}, grpc.Header(&headers))
+			} else {
+				stream, streamErr := client.StreamingOutputCall(context.Background(), &grpc_testing.StreamingOutputCallRequest{}, grpc.Header(&headers))
+				s.Require().NoError(streamErr)
+				_, err = stream.Recv()
+			}
+			s.Require().Equal(codes.ResourceExhausted, status.Code(err))
+			s.Equal([]string{tt.want}, headers.Get("retry-after"))
+		})
+	}
+}
