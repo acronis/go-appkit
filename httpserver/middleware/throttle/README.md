@@ -152,7 +152,20 @@ rules:
     alias: per_identity
 ```
 
-In this example sliding window algorithm will be used for rate-limiting (`alg` parameter has `"token_bucket"` value by default).  It means, only 15 requests are allowed per minute. They could be sent even simultaneously, but all exceeding requests that are received in the same minute will be rejected.
+This example selects `sliding_window` instead of the default `leaky_bucket` algorithm, with an estimated limit of 15 requests per minute.
+
+`sliding_window` uses an approximate sliding-window counter with constant memory per key.
+It combines the current fixed-window count with a linearly decreasing share of the previous count,
+rounded down using exact integer arithmetic. It assumes requests were spread evenly across the previous window;
+it does **not** guarantee at most N requests in every rolling interval of duration T.
+Bursty traffic can cause both extra admissions and extra rejections compared with an exact sliding window.
+For example, with `100/m`, bursts of 100 requests at 59.9s and 119.8s after a minute boundary can both pass:
+200 requests are accepted within 59.9s.
+
+On rejection, the limiter calculates the earliest retry time under this approximation, assuming no intervening
+admissions or clock jumps. Backlog processing uses this delay, and `responseRetryAfter: auto` exposes it to clients
+(with the protocol's time precision). It is not a reservation: competing requests can consume the available capacity.
+State is local to the process; eviction of a key from the LRU cache resets its request history.
 
 ### Example of throttling of all requests with a "bad" User-Agent HTTP header
 

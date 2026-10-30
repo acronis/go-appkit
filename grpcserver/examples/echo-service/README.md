@@ -23,10 +23,11 @@ Configuration is read from the `config.yml` file, which allows you to customize 
 
 ## Starting the service
 
-Run the service using:
+This example uses `go-appkit` from the repository root through a relative `replace` directive in `go.mod`.
+Run it from this directory inside a repository checkout:
 
 ```bash
-go run main.go
+go run .
 ```
 
 You should see log output similar to:

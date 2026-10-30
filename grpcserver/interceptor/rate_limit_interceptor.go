@@ -9,8 +9,6 @@ package interceptor
 import (
 	"context"
 	"fmt"
-	"math"
-	"strconv"
 	"time"
 
 	"google.golang.org/grpc"
@@ -472,8 +470,7 @@ func DefaultRateLimitUnaryOnReject(
 	}
 
 	// Set retry after header in gRPC metadata
-	retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
-	md := metadata.Pairs("retry-after", strconv.Itoa(retryAfterSeconds))
+	md := metadata.Pairs("retry-after", ratelimit.FormatRetryAfter(retryAfter))
 	if err := grpc.SetHeader(ctx, md); err != nil && logger != nil {
 		logger.Warn("failed to set retry-after header", log.Error(err))
 	}
@@ -498,8 +495,7 @@ func DefaultRateLimitStreamOnReject(
 	}
 
 	// Set retry after header in gRPC metadata
-	retryAfterSeconds := int(math.Ceil(retryAfter.Seconds()))
-	md := metadata.Pairs("retry-after", strconv.Itoa(retryAfterSeconds))
+	md := metadata.Pairs("retry-after", ratelimit.FormatRetryAfter(retryAfter))
 	if err := ss.SetHeader(md); err != nil && logger != nil {
 		logger.Warn("failed to set retry-after header", log.Error(err))
 	}
