@@ -10,6 +10,8 @@ require (
 )
 
 require (
+	github.com/acronis/logf v1.5.0 // indirect
+	github.com/acronis/logftext v1.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396 // indirect
@@ -28,8 +30,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.21.0 // indirect
-	github.com/ssgreg/logf v1.5.0 // indirect
-	github.com/ssgreg/logftext v1.1.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/throttled/throttled/v2 v2.15.0 // indirect
 	github.com/vasayxtx/go-glob v1.2.0 // indirect

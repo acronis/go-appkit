@@ -12,7 +12,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/ssgreg/logf"
+	"github.com/acronis/logf"
 
 	"github.com/acronis/go-appkit/log"
 )

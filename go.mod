@@ -3,6 +3,8 @@ module github.com/acronis/go-appkit
 go 1.26.0
 
 require (
+	github.com/acronis/logf v1.5.0
+	github.com/acronis/logftext v1.1.2
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
 	github.com/go-chi/chi/v5 v5.3.2
@@ -11,8 +13,6 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/viper v1.21.0
-	github.com/ssgreg/logf v1.5.0
-	github.com/ssgreg/logftext v1.1.1
 	github.com/stretchr/testify v1.12.1
 	github.com/throttled/throttled/v2 v2.15.0
 	github.com/vasayxtx/go-glob v1.2.0

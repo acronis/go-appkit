@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ssgreg/logf"
-	"github.com/ssgreg/logftext"
+	"github.com/acronis/logf"
+	"github.com/acronis/logftext"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
