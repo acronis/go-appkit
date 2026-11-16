@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ssgreg/logf"
+	"github.com/acronis/logf"
 	"github.com/stretchr/testify/require"
 
 	"github.com/acronis/go-appkit/httpserver/middleware"

@@ -16,7 +16,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/ssgreg/logf"
+	"github.com/acronis/logf"
 	"github.com/stretchr/testify/require"
 )
 

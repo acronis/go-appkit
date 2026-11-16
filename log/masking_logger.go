@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/ssgreg/logf"
+	"github.com/acronis/logf"
 )
 
 // MaskingLogger is a logger that masks secrets in log fields.
