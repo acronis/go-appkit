@@ -175,15 +175,15 @@ func (rt *RetryableRoundTripper) RoundTrip(req *http.Request) (*http.Response, e
 	var resp *http.Response
 	var roundTripErr error
 	for curRetryAttemptNum := 0; ; curRetryAttemptNum++ {
-		// Rewind request body.
-		if rewindErr := rewindReqBody(req); rewindErr != nil {
-			if curRetryAttemptNum == 0 {
-				return nil, &RetryableRoundTripperError{Inner: rewindErr}
+		// The initial body is already prepared by makeRequestBodyRewindable.
+		// Rewind only for retries so the initial reader is not replaced without closing it.
+		if curRetryAttemptNum > 0 {
+			if rewindErr := rewindReqBody(req); rewindErr != nil {
+				rt.logger(reqCtx).Error(fmt.Sprintf(
+					"failed to rewind request body between retry attempts, %d request(s) done", curRetryAttemptNum+1),
+					log.Error(rewindErr))
+				return resp, roundTripErr
 			}
-			rt.logger(reqCtx).Error(fmt.Sprintf(
-				"failed to rewind request body between retry attempts, %d request(s) done", curRetryAttemptNum+1),
-				log.Error(rewindErr))
-			return resp, roundTripErr
 		}
 
 		// Discard and close response body before next retry.

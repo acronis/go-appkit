@@ -210,7 +210,7 @@ func TestRetryableRoundTripper_RoundTrip(t *testing.T) {
 			WantReqsNum:       4,
 			WantSrvReqInfos:   genReqInfos(http.MethodPost, reqBodyJSON, 4),
 			WantFinalRespCode: http.StatusOK,
-			WantSeekOps:       map[seekOp]int{{0, io.SeekCurrent}: 1, {0, io.SeekStart}: 4},
+			WantSeekOps:       map[seekOp]int{{0, io.SeekCurrent}: 1, {0, io.SeekStart}: 3},
 		},
 		{
 			Name: "custom exp backoff retry policy, POST method, seeker body with no-zero initial offset",
@@ -232,7 +232,7 @@ func TestRetryableRoundTripper_RoundTrip(t *testing.T) {
 			WantReqsNum:       4,
 			WantSrvReqInfos:   genReqInfos(http.MethodPost, reqBodyJSON[10:], 4),
 			WantFinalRespCode: http.StatusOK,
-			WantSeekOps:       map[seekOp]int{{10, io.SeekStart}: 4, {0, io.SeekCurrent}: 1},
+			WantSeekOps:       map[seekOp]int{{10, io.SeekStart}: 3, {0, io.SeekCurrent}: 1},
 		},
 		{
 			Name: "custom constant backoff policy, POST method, upload from file directly",
@@ -252,7 +252,7 @@ func TestRetryableRoundTripper_RoundTrip(t *testing.T) {
 			WantReqsNum:         4,
 			WantSrvReqInfos:     genReqInfos(http.MethodPost, reqBodyJSON, 4),
 			WantFinalRespCode:   http.StatusOK,
-			WantSeekOps:         map[seekOp]int{{0, io.SeekCurrent}: 1, {0, io.SeekStart}: 4},
+			WantSeekOps:         map[seekOp]int{{0, io.SeekCurrent}: 1, {0, io.SeekStart}: 3},
 			WantCloseReqBodyErr: "file already closed",
 		},
 		{
@@ -567,4 +567,40 @@ func TestRetryableRoundTripper_RoundTrip_IdempotentFlag(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestRetryableRoundTripper_GetBodyClosesReaders(t *testing.T) {
+	srv := newTestServerForRetryableRoundTripper()
+	defer srv.Close()
+	name := path.Join(t.TempDir(), "upload")
+	require.NoError(t, os.WriteFile(name, []byte("payload"), 0600))
+	original, err := os.Open(name)
+	require.NoError(t, err)
+	defer original.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL, original)
+	require.NoError(t, err)
+	var opened []*os.File
+	req.GetBody = func() (io.ReadCloser, error) {
+		body, openErr := os.Open(name)
+		if openErr == nil {
+			opened = append(opened, body)
+		}
+		return body, openErr
+	}
+	defer func() {
+		for _, body := range opened {
+			_ = body.Close()
+		}
+	}()
+	rt, err := NewRetryableRoundTripper(http.DefaultTransport)
+	require.NoError(t, err)
+	resp, err := rt.RoundTrip(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NotEmpty(t, opened)
+	for _, body := range opened {
+		_, statErr := body.Stat()
+		require.ErrorIs(t, statErr, os.ErrClosed, "GetBody reader must be closed")
+	}
 }
