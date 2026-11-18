@@ -600,7 +600,6 @@ func TestRetryableRoundTripper_GetBodyClosesReaders(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NotEmpty(t, opened)
 	for _, body := range opened {
-		_, statErr := body.Stat()
-		require.ErrorIs(t, statErr, os.ErrClosed, "GetBody reader must be closed")
+		require.ErrorIs(t, body.Close(), os.ErrClosed, "GetBody reader must be closed")
 	}
 }
