@@ -63,6 +63,30 @@ client := &http.Client{Transport: transport}
 - `ShouldRefreshTokenAndRetry`: Custom condition for token refresh and retry
 - `LoggerProvider`: Context-specific logger function
 
+#### Per-token invalidation
+
+`AuthBearerRoundTripper` invalidates the whole provider cache on an authentication failure.
+When one provider holds many tokens (for example, one token per tenant scope), use `InvalidatableAuthBearerRoundTripper` instead.
+Its provider returns an invalidator together with each token, and on an authentication failure the round tripper invalidates only the token that failed.
+The provider throttles the invalidation, so the options have no `MinInvalidationInterval`.
+
+```go
+tokenProvider := httpclient.InvalidatableAuthProviderFunc(
+    func(ctx context.Context, scope ...string) (string, func() bool, error) {
+        // Return the token and a function that removes only this token from the cache,
+        // e.g. func() bool { return cache.RemoveIf(key, token) }.
+        return "your-access-token", func() bool { return false }, nil
+    })
+
+transport := httpclient.NewInvalidatableAuthBearerRoundTripperWithOpts(
+    http.DefaultTransport,
+    tokenProvider,
+    httpclient.InvalidatableAuthBearerRoundTripperOpts{
+        TokenScope: []string{"my-service:read"},
+    },
+)
+```
+
 ### Logging Round Tripper
 
 Provides comprehensive HTTP request and response logging.
