@@ -17,7 +17,7 @@ import (
 )
 
 // AuthBearerRoundTripperError is returned in RoundTrip method of AuthBearerRoundTripper
-// when the original request cannot be potentially retried.
+// and InvalidatableAuthBearerRoundTripper when the original request cannot be potentially retried.
 type AuthBearerRoundTripperError struct {
 	Inner error
 }
@@ -132,11 +132,45 @@ const authorizationHeader = "Authorization"
 //   - On transport errors (no response), no auth retry is attempted here.
 //   - If token refresh fails or token stays the same after invalidation, the original response is returned unchanged.
 func (rt *AuthBearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return roundTripWithBearer(req, rt.Delegate, rt.getToken, rt.invalidateAuthProviderCacheIfNeeded, bearerRetryOpts{
+		tokenScope:                 rt.opts.TokenScope,
+		shouldRefreshTokenAndRetry: rt.opts.ShouldRefreshTokenAndRetry,
+		loggerProvider:             rt.opts.LoggerProvider,
+		invalidatedLogMsg:          "auth provider cache invalidated after 401 response",
+	})
+}
+
+// getToken returns no token invalidator: AuthBearerRoundTripper invalidates the whole provider cache.
+func (rt *AuthBearerRoundTripper) getToken(
+	ctx context.Context, scope ...string,
+) (token string, invalidate func() bool, err error) {
+	token, err = rt.AuthProvider.GetToken(ctx, scope...)
+	return token, nil, err
+}
+
+// tokenWithInvalidatorFunc returns a token and a function that invalidates it.
+type tokenWithInvalidatorFunc func(ctx context.Context, scope ...string) (string, func() bool, error)
+
+// bearerRetryOpts are the options shared by AuthBearerRoundTripper and InvalidatableAuthBearerRoundTripper.
+type bearerRetryOpts struct {
+	tokenScope                 []string
+	shouldRefreshTokenAndRetry func(ctx context.Context, resp *http.Response) bool
+	loggerProvider             func(ctx context.Context) log.FieldLogger
+	invalidatedLogMsg          string
+}
+
+// roundTripWithBearer is the RoundTrip of the bearer round trippers.
+// On a refresh it calls invalidateCache if set, else the invalidator returned with the token of the first attempt.
+// invalidateCache is a parameter and not a token invalidator, so AuthBearerRoundTripper does not allocate it per call.
+func roundTripWithBearer(
+	req *http.Request, delegate http.RoundTripper, getToken tokenWithInvalidatorFunc, invalidateCache func() bool,
+	opts bearerRetryOpts,
+) (*http.Response, error) {
 	if req.Header.Get(authorizationHeader) != "" {
-		return rt.Delegate.RoundTrip(req)
+		return delegate.RoundTrip(req)
 	}
 
-	token, err := rt.AuthProvider.GetToken(req.Context(), rt.opts.TokenScope...)
+	token, invalidate, err := getToken(req.Context(), opts.tokenScope...)
 	if err != nil {
 		return nil, &AuthBearerRoundTripperError{Inner: err}
 	}
@@ -156,47 +190,52 @@ func (rt *AuthBearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 	req = req.Clone(req.Context()) // Per RoundTripper contract.
 	req.Header.Set(authorizationHeader, "Bearer "+token)
 
-	resp, err := rt.Delegate.RoundTrip(req)
+	resp, err := delegate.RoundTrip(req)
 	if err != nil {
 		return resp, err
 	}
 
-	if !rt.opts.ShouldRefreshTokenAndRetry(req.Context(), resp) {
+	if !opts.shouldRefreshTokenAndRetry(req.Context(), resp) {
 		return resp, nil
 	}
 
-	authProviderCacheInvalidated := rt.invalidateAuthProviderCacheIfNeeded()
-	if authProviderCacheInvalidated {
-		getLogger(req.Context(), rt.opts.LoggerProvider).Info("auth provider cache invalidated after 401 response")
+	var invalidated bool
+	switch {
+	case invalidateCache != nil:
+		invalidated = invalidateCache()
+	case invalidate != nil:
+		invalidated = invalidate()
+	}
+	if invalidated {
+		getLogger(req.Context(), opts.loggerProvider).Info(opts.invalidatedLogMsg)
 	}
 
-	newToken, newTokenErr := rt.AuthProvider.GetToken(req.Context(), rt.opts.TokenScope...)
+	newToken, _, newTokenErr := getToken(req.Context(), opts.tokenScope...)
 	if newTokenErr != nil {
-		getLogger(req.Context(), rt.opts.LoggerProvider).Error(
+		getLogger(req.Context(), opts.loggerProvider).Error(
 			"failed to get new token after 401 response", log.Error(newTokenErr))
 		return resp, nil
 	}
 
 	if newToken == token {
-		if authProviderCacheInvalidated {
-			getLogger(req.Context(), rt.opts.LoggerProvider).Warn(
-				"auth provider cache invalidated after 401 response, but token is unchanged")
+		if invalidated {
+			getLogger(req.Context(), opts.loggerProvider).Warn(opts.invalidatedLogMsg + ", but token is unchanged")
 		}
 		return resp, nil
 	}
 
 	// Rewind body before retry; if it fails, return original response intact.
 	if rewindErr := rewindReqBody(req); rewindErr != nil {
-		getLogger(req.Context(), rt.opts.LoggerProvider).Error(
+		getLogger(req.Context(), opts.loggerProvider).Error(
 			"token changed after 401 response, but failed to rewind request body for retry", log.Error(rewindErr))
 		return resp, nil
 	}
 
 	if resp.Body != nil {
-		drainResponseBody(resp, getLogger(req.Context(), rt.opts.LoggerProvider))
+		drainResponseBody(resp, getLogger(req.Context(), opts.loggerProvider))
 	}
 	req.Header.Set(authorizationHeader, "Bearer "+newToken)
-	return rt.Delegate.RoundTrip(req)
+	return delegate.RoundTrip(req)
 }
 
 func (rt *AuthBearerRoundTripper) invalidateAuthProviderCacheIfNeeded() (invalidated bool) {
