@@ -311,13 +311,12 @@ func copyValues(src map[string]string) map[string]string {
 
 // prepareCallMetrics prepares the call metrics information and manages start time.
 func prepareCallMetrics(ctx context.Context, fullMethod string, userAgentType string) (
-	newCtx context.Context, callInfo CallInfoMetrics, startTime time.Time, startTimeGenerated bool, mp *MetricsParams,
+	newCtx context.Context, callInfo CallInfoMetrics, startTime time.Time, mp *MetricsParams,
 ) {
 	startTime = GetCallStartTimeFromContext(ctx)
 	if startTime.IsZero() {
 		startTime = time.Now()
 		ctx = NewContextWithCallStartTime(ctx, startTime)
-		startTimeGenerated = true
 	}
 
 	mp = GetMetricsParamsFromContext(ctx)
@@ -334,7 +333,7 @@ func prepareCallMetrics(ctx context.Context, fullMethod string, userAgentType st
 		CustomValues:  copyValues(mp.values), // we copy values here to avoid mutation during the InFlight metrics processing
 	}
 
-	return ctx, callInfo, startTime, startTimeGenerated, mp
+	return ctx, callInfo, startTime, mp
 }
 
 // MetricsUnaryInterceptor is an interceptor that collects metrics for incoming gRPC calls.
@@ -358,7 +357,7 @@ func MetricsUnaryInterceptor(
 			userAgentType = config.unaryUserAgentTypeProvider(ctx, info)
 		}
 
-		ctx, callInfo, startTime, _, mp := prepareCallMetrics(ctx, info.FullMethod, userAgentType)
+		ctx, callInfo, startTime, mp := prepareCallMetrics(ctx, info.FullMethod, userAgentType)
 
 		collector.IncInFlightCalls(callInfo, CallMethodTypeUnary)
 		defer collector.DecInFlightCalls(callInfo, CallMethodTypeUnary)
@@ -402,18 +401,13 @@ func MetricsStreamInterceptor(
 			userAgentType = config.streamUserAgentTypeProvider(ss.Context(), info)
 		}
 
-		ctx, callInfo, startTime, startTimeGenerated, mp := prepareCallMetrics(ss.Context(), info.FullMethod, userAgentType)
+		ctx, callInfo, startTime, mp := prepareCallMetrics(ss.Context(), info.FullMethod, userAgentType)
 
 		collector.IncInFlightCalls(callInfo, CallMethodTypeStream)
 		defer collector.DecInFlightCalls(callInfo, CallMethodTypeStream)
 
-		nextSrvStream := ss
-		if startTimeGenerated {
-			nextSrvStream = &WrappedServerStream{
-				ServerStream: ss,
-				Ctx:          ctx,
-			}
-		}
+		// ctx may carry a new start time and/or MetricsParams, so the handler must always see it.
+		wrappedStream := &WrappedServerStream{ServerStream: ss, Ctx: ctx}
 
 		var err error
 		defer func() {
@@ -427,7 +421,7 @@ func MetricsStreamInterceptor(
 			collector.ObserveCallFinish(callInfo, CallMethodTypeStream, getCodeFromError(err), startTime)
 		}()
 
-		err = handler(srv, nextSrvStream)
+		err = handler(srv, wrappedStream)
 		return err
 	}
 }

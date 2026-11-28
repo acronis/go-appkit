@@ -9,6 +9,7 @@ package interceptor
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -329,6 +330,41 @@ func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorWithCustomMetr
 	requireSamplesCountInGauge(s.T(), gauge, 0)
 }
 
+func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorParamsWithExistingStartTime() {
+	promMetrics := NewPrometheusMetrics(WithPrometheusCustomLabelNames([]string{"custom"}))
+
+	// An outer interceptor stores the call start time before the metrics one runs.
+	var serverOptions []grpc.ServerOption
+	if s.IsUnary {
+		serverOptions = []grpc.ServerOption{grpc.ChainUnaryInterceptor(
+			func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+				return handler(NewContextWithCallStartTime(ctx, time.Now()), req)
+			},
+			MetricsUnaryInterceptor(promMetrics),
+		)}
+	} else {
+		serverOptions = []grpc.ServerOption{grpc.ChainStreamInterceptor(
+			func(srv interface{}, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+				return handler(srv, &WrappedServerStream{ServerStream: ss, Ctx: NewContextWithCallStartTime(ss.Context(), time.Now())})
+			},
+			MetricsStreamInterceptor(promMetrics),
+		)}
+	}
+	svc, client, closeSvc, err := startTestService(serverOptions, nil)
+	s.Require().NoError(err)
+	defer func() { s.Require().NoError(closeSvc()) }()
+
+	s.setMetricsParamsHandler(svc, func(params *MetricsParams) { params.SetValue("custom", "value") })
+
+	methodName, methodType := s.getMethodNameAndType()
+	hist := promMetrics.Durations.WithLabelValues(
+		"grpc.testing.TestService", methodName, string(methodType), "", codes.OK.String(), "value").(prometheus.Histogram)
+
+	s.Require().NoError(s.makeCall(client))
+
+	testutil.RequireSamplesCountInHistogram(s.T(), hist, 1)
+}
+
 func (s *MetricsInterceptorTestSuite) TestMetricsServerInterceptorPanicHandling() {
 	promMetrics := NewPrometheusMetrics()
 
@@ -402,7 +438,13 @@ func (s *MetricsInterceptorTestSuite) createTestServiceWithMetricsParamsAndOptio
 		return nil, nil, nil, err
 	}
 
-	// Modify the service handlers to use MetricsParams from context
+	s.setMetricsParamsHandler(svc, setupParams)
+
+	return svc, client, closeSvc, nil
+}
+
+// setMetricsParamsHandler modifies the service handlers to use MetricsParams from context.
+func (s *MetricsInterceptorTestSuite) setMetricsParamsHandler(svc *testService, setupParams func(params *MetricsParams)) {
 	if s.IsUnary {
 		svc.SwitchUnaryCallHandler(func(ctx context.Context, req *grpc_testing.SimpleRequest) (*grpc_testing.SimpleResponse, error) {
 			// Get the MetricsParams that the metrics interceptor put in the context
@@ -422,8 +464,6 @@ func (s *MetricsInterceptorTestSuite) createTestServiceWithMetricsParamsAndOptio
 			})
 		})
 	}
-
-	return svc, client, closeSvc, nil
 }
 
 func (s *MetricsInterceptorTestSuite) getMethodNameAndType() (string, CallMethodType) {
